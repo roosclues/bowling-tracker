@@ -1,6 +1,6 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
-// welcome, summary300, pins, game, summary, home, stats, help, settings, lefty.
+// welcome, summary300, pins, game, summary, home, stats, help, settings, about, lefty.
 
 const STOP = new URLSearchParams(location.search).get('stop');
 const frame = document.getElementById('app');
@@ -239,9 +239,13 @@ async function run() {
 
   // ---- Settings: left-handed flips the lane ----
   await nav('#/settings');
+  const swVersion = (await (await fetch('../sw.js')).text()).match(/const VERSION = '([^']+)'/)?.[1];
+  check('settings shows the app version, matching sw.js', text('#appVersion') === swVersion, `${text('#appVersion')} vs ${swVersion}`);
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
   stopAt('settings');
+  W.scrollTo(0, D.body.scrollHeight);
+  stopAt('about');
   await nav(`#/session/${sid}`);
   await click('[data-act="newgame"]');
   await sleep(80);

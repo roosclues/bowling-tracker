@@ -4,7 +4,33 @@ import {
   db, save, downloadBackup, restoreBackup, canUndoRestore, undoRestore, exportCSV, canShareFiles, wipeAll, requestPersist,
 } from '../storage.js';
 import { topbar, icon } from '../ui.js';
+import { APP_VERSION, versionDate } from '../version.js';
 import { fmtDate, toast, go } from '../util.js';
+
+// Ask the service worker to look for a newer version now. If one exists it downloads in the
+// background, and app.js shows "App updated" once it's ready.
+async function checkForUpdate(btn) {
+  const reg = await navigator.serviceWorker?.getRegistration();
+  if (!reg) {
+    toast('Updates are checked automatically once the app is installed.');
+    return;
+  }
+  if (!navigator.onLine) {
+    toast("You're offline. Connect to the internet to check for updates.");
+    return;
+  }
+  btn.disabled = true;
+  try {
+    await reg.update();
+    toast(reg.installing || reg.waiting
+      ? 'A new version is downloading…'
+      : `You're on the latest version (${APP_VERSION}).`);
+  } catch {
+    toast("Couldn't check for updates right now. Try again later.");
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 export function render(root) {
   const share = canShareFiles('text/plain', 'x.txt');
@@ -55,8 +81,15 @@ export function render(root) {
 
       <section class="card">
         <h3>Storage</h3>
-        <p class="hint" id="storageInfo">${db.sessions.length} sessions · ${gameCount} games</p>
+        <p class="hint" id="storageInfo">${db.sessions.length} session${db.sessions.length === 1 ? "" : "s"} · ${gameCount} game${gameCount === 1 ? "" : "s"}</p>
         <button class="btn danger block" data-act="wipe">${icon('trash', 20)} Delete all data</button>
+      </section>
+
+      <section class="card">
+        <h3>About</h3>
+        <div class="about-row"><span>Version</span><strong id="appVersion">${APP_VERSION}</strong></div>
+        <p class="hint">Published ${versionDate()}. New versions download by themselves when you open the app with internet, and are used from the next time you open it.</p>
+        <button class="btn block" data-act="checkUpdate">${icon('refresh', 20)} Check for updates</button>
       </section>
 
       <p class="meta center">Bowling Tracker · works offline · <a href="#/help">Help</a></p>
@@ -104,6 +137,9 @@ export function render(root) {
         break;
       case 'csv':
         await exportCSV({ share: shareCSV });
+        break;
+      case 'checkUpdate':
+        await checkForUpdate(btn);
         break;
       case 'wipe':
         if (!confirm('Delete ALL sessions and games from this phone? Make a backup first if you might want them back.')) return;

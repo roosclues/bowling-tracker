@@ -1,5 +1,6 @@
-"""Run before every deploy: gives sw.js a new VERSION so phones download the update,
-and checks that every app file is in the service worker's offline list.
+"""Run before every deploy: gives sw.js and js/version.js (shown in Settings) a new VERSION
+so phones download the update, and checks that every app file is in the service worker's
+offline list.
 
 Usage: python tools/bump_version.py
 """
@@ -10,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SW = ROOT / "sw.js"
+APP_VERSION = ROOT / "js" / "version.js"
 
 text = SW.read_text(encoding="utf-8")
 listed = set(re.findall(r"^\s*'([^']+)',?$", text, re.M))
@@ -30,5 +32,10 @@ version = "v" + datetime.now().strftime("%Y%m%d-%H%M")
 text, n = re.subn(r"const VERSION = '[^']*';", f"const VERSION = '{version}';", text)
 if n != 1:
     sys.exit("Could not find the VERSION line in sw.js.")
+app_text, m = re.subn(r"export const APP_VERSION = '[^']*';", f"export const APP_VERSION = '{version}';",
+                      APP_VERSION.read_text(encoding="utf-8"))
+if m != 1:
+    sys.exit("Could not find the APP_VERSION line in js/version.js.")
 SW.write_text(text, encoding="utf-8")
-print(f"sw.js VERSION is now {version}. All {len(on_disk)} app files are listed.")
+APP_VERSION.write_text(app_text, encoding="utf-8")
+print(f"Version is now {version} (sw.js and js/version.js). All {len(on_disk)} app files are listed.")
