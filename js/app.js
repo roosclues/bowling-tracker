@@ -1,6 +1,7 @@
 // Hash router, bottom tabs, glossary pop-ups, and service worker registration.
 
-import { currentGame, onExternalChange, loadProblem } from './storage.js';
+import { db, save, currentGame, onExternalChange, loadProblem } from './storage.js';
+import { APP_VERSION } from './version.js';
 import { GLOSSARY } from './terms.js';
 import { go, toast, esc } from './util.js';
 import { icon } from './ui.js';
@@ -12,6 +13,7 @@ import * as summary from './views/summary.js';
 import * as stats from './views/stats.js';
 import * as settings from './views/settings.js';
 import * as help from './views/help.js';
+import * as changelog from './views/changelog.js';
 
 const root = document.getElementById('view');
 
@@ -35,6 +37,7 @@ const routes = [
   [/^#\/stats$/, stats.render, 'stats'],
   [/^#\/settings$/, settings.render, 'settings'],
   [/^#\/help$/, help.render, 'help'],
+  [/^#\/changelog$/, changelog.render, 'settings'],
   [/^#\/bowl$/, () => {
     const cur = currentGame();
     go(cur ? `#/game/${cur.session.id}/${cur.game.id}` : '#/new', { replace: true });
@@ -69,6 +72,12 @@ function route() {
   keepAwake(hash.startsWith('#/game/'));
   if (hash !== lastHash) window.scrollTo({ top: 0 });
   lastHash = hash;
+}
+
+// A brand-new install has nothing to announce; existing users see "What's new" on Home after updates.
+if (!db.settings.seenVersion && db.sessions.length === 0) {
+  db.settings.seenVersion = APP_VERSION;
+  save();
 }
 
 window.addEventListener('hashchange', route);

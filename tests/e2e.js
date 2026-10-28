@@ -1,6 +1,7 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
-// welcome, summary300, pins, game, summary, home, stats, help, settings, about, lefty.
+// welcome, summary300, pins, game, summary, home, stats, help, lanetop, lanebottom,
+// changelog, settings, about, lefty.
 
 const STOP = new URLSearchParams(location.search).get('stop');
 const frame = document.getElementById('app');
@@ -69,7 +70,11 @@ async function ball(standing = []) {
 }
 const laneVal = (k) => text(`.lr-row[data-k="${k}"] .lr-val`);
 
+let SW_VERSION = '';
+const swVersionNow = () => SW_VERSION;
+
 async function run() {
+  SW_VERSION = (await (await fetch('../sw.js')).text()).match(/const VERSION = '([^']+)'/)?.[1] ?? '';
   localStorage.clear();
   await new Promise((res) => {
     frame.onload = res;
@@ -235,12 +240,48 @@ async function run() {
   await click('.info');
   check('info dialog opens', D.getElementById('infoDialog').open);
   await click('[data-close]');
+  check('help shows the to-scale lane', !!$('#demoLane svg.lanemap .lm-pin') && D.querySelectorAll('#demoLane .lm-label').length >= 6);
+  {
+    // Tap 45 ft down the lane on board 8 (right-handed): moves the breakpoint there.
+    const svg = $('#demoLane svg');
+    const r = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const opts = {
+      bubbles: true, pointerId: 1, isPrimary: true,
+      clientX: r.left + ((16 + (39 - 8) * 10 + 5) / vb.width) * r.width,
+      clientY: r.top + ((1004 - 45 * 15) / vb.height) * r.height,
+    };
+    svg.dispatchEvent(new W.PointerEvent('pointerdown', opts));
+    svg.dispatchEvent(new W.PointerEvent('pointerup', opts));
+    await sleep(30);
+    const bp = text('#demoLane [data-k="breakpoint"] .lr-val');
+    check('tapping the to-scale lane sets the breakpoint', bp === 'Board 8 · 45 ft down the lane', bp);
+  }
   stopAt('help');
+  W.scrollTo(0, $('#demoLane').getBoundingClientRect().top + W.scrollY - 70);
+  stopAt('lanetop');
+  W.scrollBy(0, 560);
+  stopAt('lanebottom');
+
+  // ---- What's new ----
+  await nav('#/changelog');
+  check('update history lists releases', D.querySelectorAll('.release').length >= 3);
+  stopAt('changelog');
+  check('installed version is marked in the history', text('.release.current .rel-meta').startsWith(swVersionNow()), text('.release.current .rel-meta'));
+  // Pretend the app was just updated from an older version: Home shows a one-time banner.
+  const stored = db();
+  stored.settings.seenVersion = 'v20000101-0000';
+  localStorage.setItem('bowltrack.v1', JSON.stringify(stored));
+  W.dispatchEvent(new StorageEvent('storage', { key: 'bowltrack.v1', newValue: JSON.stringify(stored) }));
+  await nav('#/');
+  check('home shows "what is new" after an update', !!$('.banner[href="#/changelog"]'));
+  await click('.banner[href="#/changelog"]');
+  await nav('#/');
+  check('"what is new" banner goes away once read', !$('.banner[href="#/changelog"]'));
 
   // ---- Settings: left-handed flips the lane ----
   await nav('#/settings');
-  const swVersion = (await (await fetch('../sw.js')).text()).match(/const VERSION = '([^']+)'/)?.[1];
-  check('settings shows the app version, matching sw.js', text('#appVersion') === swVersion, `${text('#appVersion')} vs ${swVersion}`);
+  check('settings shows the app version, matching sw.js', text('#appVersion') === SW_VERSION, `${text('#appVersion')} vs ${SW_VERSION}`);
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
   stopAt('settings');

@@ -410,6 +410,23 @@ button.box { cursor: pointer; }
 .lane .mk-feet { fill: var(--mk-feet); }
 .lane .mk-target { fill: var(--mk-target); }
 .lane .mk-bp { fill: var(--mk-bp); }
+/* To-scale lane on the Help screen (shares the .lane fills above) */
+.lanemap { max-width: 380px; margin: 4px auto 0; border-radius: 10px; }
+.lanemap .lm-pit { fill: #0b0f17; }
+.lanemap .lm-deck { fill: var(--wood-2); }
+.lanemap .rf { stroke: var(--lane-ink); stroke-width: 2.5; stroke-linecap: round; opacity: 0.75; }
+.lanemap .oil-end { stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 6 5; opacity: 0.75; }
+.lanemap .lm-label {
+  fill: var(--lane-ink); font: 800 10px system-ui, sans-serif; letter-spacing: 0.05em;
+  paint-order: stroke; stroke: var(--wood); stroke-width: 4px; stroke-linejoin: round;
+}
+.lanemap .lm-label.on-approach { stroke: var(--approach); }
+.lanemap .lm-tick { fill: #ffffff; opacity: 0.85; font: 700 8px system-ui, sans-serif; text-anchor: middle; }
+.lanemap .lm-tickline { stroke: #ffffff; stroke-width: 1; opacity: 0.55; }
+.lanemap .lm-pin { fill: #fdfcf8; stroke: rgba(0, 0, 0, 0.25); stroke-width: 1; }
+.lanemap .lm-pin-ring { fill: none; stroke: #d6363b; stroke-width: 1.6; }
+.lanemap .lm-path { fill: none; stroke: #ffffff; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.35)); }
+.lanemap .lm-path-feet { stroke: #ffffff; stroke-width: 2; stroke-dasharray: 4 4; opacity: 0.85; }
 .lane-readout { margin-top: 8px; }
 .lr-row { display: flex; align-items: center; gap: 8px; min-height: 48px; border-top: 1px solid var(--line); }
 .lr-row:first-child { border-top: 0; }
@@ -480,6 +497,23 @@ button.box { cursor: pointer; }
 }
 .c-tip strong { font-size: 0.95rem; margin-right: 6px; }
 .c-tip span { color: var(--ink-2); }
+
+/* ---------- What's new ---------- */
+.changelog { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--line); }
+.release {
+  position: relative; margin: 0 0 14px; padding: 14px 16px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
+}
+.release::before {
+  content: ""; position: absolute; left: -22px; top: 20px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--surface-3); border: 2px solid var(--page);
+}
+.release.current::before { background: var(--accent); }
+.rel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rel-head h3 { margin: 0; }
+.rel-meta { font-size: 0.78rem; color: var(--muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.release ul { margin: 8px 0 0; padding-left: 18px; }
+.release li { margin: 5px 0; font-size: 0.9rem; color: var(--ink-2); }
 
 /* ---------- Help ---------- */
 .help ol { padding-left: 20px; margin: 6px 0; }

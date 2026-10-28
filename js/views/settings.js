@@ -89,6 +89,7 @@ export function render(root) {
         <h3>About</h3>
         <div class="about-row"><span>Version</span><strong id="appVersion">${APP_VERSION}</strong></div>
         <p class="hint">Published ${versionDate()}. New versions download by themselves when you open the app with internet, and are used from the next time you open it.</p>
+        <a class="btn block" href="#/changelog">${icon('list', 20)} What's new · update history</a>
         <button class="btn block" data-act="checkUpdate">${icon('refresh', 20)} Check for updates</button>
       </section>
 

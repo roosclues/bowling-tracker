@@ -4,6 +4,8 @@ import { db, currentGame } from '../storage.js';
 import { computeStats } from '../stats.js';
 import { sparkline } from '../charts.js';
 import { icon } from '../ui.js';
+import { APP_VERSION } from '../version.js';
+import { CHANGELOG } from '../changelog.js';
 import { esc, fmtPct, dateParts } from '../util.js';
 
 const RECENT_GAMES = 10;
@@ -30,6 +32,7 @@ export function render(root) {
   const recentAvg = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : null;
   const sessions = db.sessions.slice().reverse();
   const needBackup = (db.settings.sessionsSinceBackup || 0) >= 5;
+  const whatsNew = db.settings.seenVersion !== APP_VERSION && CHANGELOG.find((r) => r.version === APP_VERSION);
 
   const ctas = `
     ${cur ? `<a class="btn primary block big" href="#/game/${cur.session.id}/${cur.game.id}">${icon('ball')} Continue game · ${cur.game.score}</a>` : ''}
@@ -41,6 +44,12 @@ export function render(root) {
       <div class="tb-title"><div class="t1">Bowling Tracker</div></div>
     </header>
     <div class="page">
+      ${whatsNew ? `
+        <a class="banner" href="#/changelog">
+          ${icon('list')}
+          <span><strong>Updated: ${esc(whatsNew.title)}</strong>
+          <span>Tap to see what's new in this version.</span></span>
+        </a>` : ''}
       ${needBackup ? `
         <a class="banner" href="#/settings">
           ${icon('download')}

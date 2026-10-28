@@ -4,9 +4,14 @@
 import { arrowLabel, feetLabel, infoButton } from './terms.js';
 import { icon } from './ui.js';
 
-const BOARD = 10;
-const GUTTER = 16;
-const W = GUTTER * 2 + BOARD * 39;
+// Shared with the to-scale lane on the Help screen (lanemap.js).
+export const BOARD = 10;
+export const GUTTER = 16;
+export const W = GUTTER * 2 + BOARD * 39;
+export const ARROWS = [5, 10, 15, 20, 25, 30, 35];
+export const DOTS = [3, 5, 8, 11, 14, 20, 26, 29, 32, 35, 37];
+export const POCKET_BOARD = 17.5;
+
 const FOUL_Y = 172;
 const H = 250;
 const ZONES = [
@@ -14,16 +19,13 @@ const ZONES = [
   { key: 'target', top: 82, bottom: FOUL_Y, label: 'Arrow', markerY: 128 },
   { key: 'feet', top: FOUL_Y, bottom: H, label: 'Feet', markerY: 222 },
 ];
-const ARROWS = [5, 10, 15, 20, 25, 30, 35];
-const DOTS = [3, 5, 8, 11, 14, 20, 26, 29, 32, 35, 37];
-const POCKET_BOARD = 17.5;
 
-function boardX(board, hand) {
+export function boardX(board, hand) {
   const fromLeft = hand === 'L' ? board - 1 : 39 - board;
   return GUTTER + fromLeft * BOARD + BOARD / 2;
 }
 
-function xToBoard(x, hand) {
+export function xToBoard(x, hand) {
   const fromLeft = Math.floor((x - GUTTER) / BOARD);
   const b = hand === 'L' ? fromLeft + 1 : 39 - fromLeft;
   return Math.min(39, Math.max(1, b));

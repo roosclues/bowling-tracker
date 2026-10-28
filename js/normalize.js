@@ -91,6 +91,7 @@ export function normalizeDB(data) {
       lastBackup: date(s.lastBackup),
       keepAwake: s.keepAwake !== false,
       haptics: s.haptics !== false,
+      seenVersion: typeof s.seenVersion === 'string' && /^v[\w-]{1,30}$/.test(s.seenVersion) ? s.seenVersion : null,
     },
     sessions: data.sessions.map((x) => normSession(x, seen)).sort((a, b) => a.date.localeCompare(b.date)),
   };

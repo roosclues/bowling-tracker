@@ -2,7 +2,7 @@
 
 import { db } from '../storage.js';
 import { GLOSSARY } from '../terms.js';
-import { mountLane } from '../lane.js';
+import { mountLaneMap } from '../lanemap.js';
 import { topbar } from '../ui.js';
 import { esc } from '../util.js';
 
@@ -24,7 +24,8 @@ export function render(root) {
 
       <section class="card">
         <h3>Reading the lane</h3>
-        <p class="hint">Try it: tap the bottom (approach), the middle (arrows) and the top (breakpoint). This demo doesn't save anything.</p>
+        <p class="hint">A lane is 60 feet from the foul line to the head pin. This one is drawn to scale along its length; the width is stretched so you can see the 39 boards. The numbers on the edge are feet from the foul line.</p>
+        <p class="hint">Try it: tap the approach to move your feet, the front of the lane to pick an arrow, and further down to set where the ball hooks. Nothing here is saved.</p>
         <div id="demoLane"></div>
       </section>
 
@@ -46,7 +47,7 @@ export function render(root) {
       </section>
     </div>`;
 
-  mountLane(root.querySelector('#demoLane'), {
+  mountLaneMap(root.querySelector('#demoLane'), {
     hand: db.settings.hand,
     value: { feet: 20, target: 10, breakpoint: 7 },
   });
