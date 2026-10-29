@@ -9,15 +9,17 @@ export const HITS = [
   { key: 'gutter', label: 'Gutter', desc: 'Ball fell into the gutter.' },
 ];
 
-export const TAGS = [
-  'Hit my arrow',
-  'Missed left',
-  'Missed right',
-  'Rushed',
-  'Late release',
-  'Good release',
-  'Felt smooth',
-];
+// "How it felt" tags. Stats read some of them by name.
+export const TAG = {
+  hitArrow: 'Hit my arrow',
+  missedLeft: 'Missed left',
+  missedRight: 'Missed right',
+  rushed: 'Rushed',
+  late: 'Late release',
+  goodRelease: 'Good release',
+  smooth: 'Felt smooth',
+};
+export const TAGS = Object.values(TAG);
 
 export const GLOSSARY = {
   boards: {
@@ -60,6 +62,14 @@ export const GLOSSARY = {
     title: 'Oil pattern',
     text: 'Lanes are oiled so balls skid before they hook. "House shot" is the normal pattern most bowling centers use. Leave it as Unknown if you are not sure.',
   },
+  spareAim: {
+    title: 'Spare aiming (3-6-9 system)',
+    text: 'Start from your strike line, keep the same arrow, and only move your feet. Find the key pin (the pin closest to you), then:\n\nPins on the far side from your bowling hand: move your feet toward your hand side, 3 boards for the 2 or 8 pin, 6 for the 4 pin and 9 for the corner pin (7 for right-handers, 10 for lefties).\n\nPins on your hand side: move your feet away from it, 4 boards for the 3 or 9 pin, 8 for the 6 pin and 12 for the corner pin, and throw it straight.\n\nThe app works these boards out for you. It\'s a starting point: if you keep missing the same way, adjust by a board or two.',
+  },
+  quick: {
+    title: 'Quick mode',
+    text: 'Saves only the pins left standing, without feet, arrow or other details. Handy in league when there is no time between shots. Your score and spare stats still count; line stats only use balls with a line recorded.',
+  },
   followMiss: {
     title: 'Move your feet the way you missed',
     text: 'Keep the same arrow, and if the ball misses the pocket, move your feet 2 boards in the direction of the miss.\n\nLight hits (ball ended up too far toward your bowling-hand side): move your feet 2 boards toward your hand side, a lower board number (e.g. 20 → 18).\n\nHigh or Brooklyn hits: move your feet 2 boards away from your hand side, a higher board number (e.g. 20 → 22).\n\nChange one thing at a time.',
@@ -87,5 +97,5 @@ export function hitLabel(key) {
 }
 
 export function infoButton(term) {
-  return `<button type="button" class="info" data-term="${term}" aria-label="What is this?">i</button>`;
+  return `<button type="button" class="info" data-term="${term}" aria-label="Explain: ${GLOSSARY[term]?.title ?? 'this'}">i</button>`;
 }

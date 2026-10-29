@@ -1,9 +1,13 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
-// welcome, summary300, pins, game, summary, home, stats, help, lanetop, lanebottom,
-// changelog, settings, about, lefty, progress, minsettings, minhome, minstats, mingame, minhelp.
+// welcome, summary300, pins, spareaim, game, summary, session, home, stats, statsfirst, statsspares, help,
+// lanetop, lanebottom, changelog, settings, about, lefty, progress, practice, goals, goalreached, minsettings, minhome,
+// minstats, mingame, minhelp.
+// Add &skin=classic to look at the Midnight lanes theme up to the "progress" step (a restore resets it).
 
-const STOP = new URLSearchParams(location.search).get('stop');
+const PARAMS = new URLSearchParams(location.search);
+const STOP = PARAMS.get('stop');
+const SKIN = PARAMS.get('skin');
 const frame = document.getElementById('app');
 const out = document.getElementById('out');
 const log = [];
@@ -35,7 +39,7 @@ async function click(sel) {
   if (!el) throw new Error('missing element ' + sel);
   el.dispatchEvent(new W.MouseEvent('click', { bubbles: true, cancelable: true }));
   // Save / Undo ignore a second tap within 350 ms (double-tap guard), so wait it out.
-  const guarded = el.matches('#saveBtn, [data-act="undo"], [data-act="saveEdit"]');
+  const guarded = el.matches('#saveBtn, [data-act="undo"], [data-act="saveEdit"], [data-act="made"], [data-act="miss"]');
   await sleep(guarded ? 400 : 60);
 }
 async function nav(hash) {
@@ -76,6 +80,7 @@ const swVersionNow = () => SW_VERSION;
 async function run() {
   SW_VERSION = (await (await fetch('../sw.js')).text()).match(/const VERSION = '([^']+)'/)?.[1] ?? '';
   localStorage.clear();
+  if (SKIN) localStorage.setItem('bowltrack.v1', JSON.stringify({ sessions: [], settings: { skin: SKIN } }));
   await new Promise((res) => {
     frame.onload = res;
     frame.src = '../index.html';
@@ -96,10 +101,12 @@ async function run() {
   $('#center').value = 'Test Lanes';
   $('#lane').value = '7';
   $('#ball').value = 'House 12 lb';
+  $('#notes').value = 'Keep my head down';
   $('#sessionForm').requestSubmit();
   await sleep(120);
   const [, sid, gid1] = W.location.hash.match(/#\/game\/(\w+)\/(\w+)/) ?? [];
   check('starts game after session form', !!gid1, W.location.hash);
+  check('session notes show on the game screen', text('#focus').includes('Keep my head down'), text('#focus'));
 
   // ---- Game 1: perfect game ----
   check('feet empty before first ever ball', laneVal('feet') === '–', laneVal('feet'));
@@ -143,7 +150,16 @@ async function run() {
   check('second ball shows 1 pin to pick up', text('.shot-head .pill') === '1 pin to pick up', text('.shot-head .pill'));
   check('7 and others are not tappable on 2nd ball', $('#pins .pin[data-pin="7"]').classList.contains('gone'));
   check('save label says spare', text('#saveBtn').includes('Spare'), text('#saveBtn'));
+  check('spare aim suggests feet 32 for the 10 pin', text('#aim').includes('feet 32 · arrow 10'), text('#aim'));
+  stopAt('spareaim');
+  await click('[data-act="aim"]');
+  check('Use puts the spare aim on the lane', laneVal('feet') === 'Board 32' && laneVal('target') === 'Board 10 · 2nd arrow', laneVal('feet'));
   await ball([]);
+  check('no spare aim on a first ball', !$('#aim'));
+
+  // Frame 2 first ball: "Same as last ball" copies frame 1's breakpoint and speed.
+  await click('[data-act="repeat"]');
+  check('"Same as last ball" copies breakpoint and speed', laneVal('breakpoint') === 'Board 6' && $('#speed').value === '15.5', `${laneVal('breakpoint')} ${$('#speed').value}`);
 
   // Frame 2: 7-10 split, then miss both.
   await ball([7, 10]);
@@ -185,6 +201,8 @@ async function run() {
   await ball([10]);
   await sleep(100);
   check('mixed game scores 225', text('.final-score') === '225', text('.final-score'));
+  check('summary shows the score with every spare made', text('#whatIf').includes('257'), text('#whatIf'));
+  check('missed spares link to practice', !!$('.frames-review a[href="#/practice/7-10"]'));
 
   const g2 = db().sessions[0].games[1];
   const s1 = g2.frames[0][0];
@@ -221,19 +239,50 @@ async function run() {
   // ---- Session & home ----
   await nav(`#/session/${sid}`);
   check('session lists 2 games', D.querySelectorAll('.list li').length === 2);
+  check('session shows strikes, spares and open frames', ['Strikes', 'Spares made', 'Open frames a game'].every((t) => text('#sessionTiles').includes(t)), text('#sessionTiles'));
+  check('session links to that center\'s stats', text('#centerStats').includes('Test Lanes'), text('#centerStats'));
+  stopAt('session');
   await nav('#/');
   check('home shows session with scores', text('.li-scores').includes('300') && text('.li-scores').includes('225'), text('.li-scores'));
   stopAt('home');
 
   // ---- Stats ----
   await nav('#/stats');
+  const tabOn = (key) => $(`[data-subtab="${key}"]`)?.getAttribute('aria-selected') === 'true';
+  check('stats opens on Overview', tabOn('overview'));
   check('stats average 263', text('.tiles .tile:first-child .tv') === '263', text('.tiles .tile:first-child .tv'));
   check('trend chart rendered', !!$('#trend svg .c-line'));
-  check('combo table has feet 20 row', !!$('.tbl tbody tr td') && [...D.querySelectorAll('.tbl tbody tr')].some((tr) => tr.textContent.includes('2nd arrow')));
+  check('Overview leaves the line tables to their tab', !$('#lines') && !$('#leaves'));
+
+  await click('[data-subtab="first"]');
+  check('First ball tab shows the lines table', tabOn('first') && !!$('#lines') && !$('#progress'));
+  check('combo table has a feet 20 + arrow 10 row', [...D.querySelectorAll('#lines tbody tr')].some((tr) => tr.children[0].textContent === '20' && tr.children[1].textContent === '10'));
+  check('combo table shows the average breakpoint', [...D.querySelectorAll('#lines tbody tr')].some((tr) => tr.children[2]?.textContent === '6'));
+  check('tables sit in a sideways-scrolling box', !!$('#lines .tbl-wrap .tbl'));
+  check('accuracy card shows feet repeatability', text('#accuracy').includes('board 20'), text('#accuracy'));
+  check('game-by-game table has games 1 and 2', D.querySelectorAll('#byGame tbody tr').length === 2);
+  check('speed card shows the average', text('#speedCard').includes('15.5 mph'), text('#speedCard'));
+  stopAt('statsfirst');
+
+  await click('[data-subtab="spares"]');
   check('7-10 leave listed as split', [...D.querySelectorAll('.leaves li')].some((li) => li.textContent.includes('7-10') && li.textContent.includes('split')));
+  {
+    const li = [...D.querySelectorAll('.leaves > li')].find((x) => x.textContent.includes('7-10'));
+    li.querySelector('details').open = true;
+    check('leave details list each time and link to practice', li.querySelectorAll('.leave-hist li').length === 1 && !!li.querySelector('a[href="#/practice/7-10"]'), li.textContent);
+    check('leave shows the spare aim', li.textContent.includes('Aim: feet 11 · arrow 10'), li.textContent);
+    check('leave summary holds only inline content', !li.querySelector('summary div'));
+  }
+  stopAt('statsspares');
+
+  await click('[data-subtab="feel"]');
+  check('feel table lists Rushed', text('#feel').includes('Rushed'), text('#feel'));
+  check('oil filter offered', D.querySelectorAll('#fOil option').length === 2, text('#fOil'));
   $('#fDays').value = '30';
   $('#fDays').dispatchEvent(new W.Event('change'));
   await sleep(50);
+  check('the tab stays open when a filter changes', tabOn('feel') && text('#feel').includes('Rushed'));
+  await click('[data-subtab="overview"]');
   check('date filter keeps today\'s games', text('.tiles .tile:first-child .tv') === '263');
   $('#fDays').value = '0';
   $('#fDays').dispatchEvent(new W.Event('change'));
@@ -245,6 +294,36 @@ async function run() {
   await click('[data-by="game"]');
   check('per-game trend chart is back', !!$('#trend svg .c-line'));
   stopAt('stats');
+
+  // ---- Spare practice ----
+  await nav('#/practice/7-10');
+  check('practice opens on the chosen leave', text('.leave-pick .chip.on') === '7-10', text('.leave-pick .chip.on'));
+  check('practice aim starts from the strike line', text('.card .aim').includes('feet 11 · arrow 10'), text('.card .aim'));
+  await click('[data-act="made"]');
+  await click('[data-act="made"]');
+  await click('[data-act="miss"]');
+  {
+    const tries = db().practice;
+    check('practice tries saved with the line', tries.length === 3 && tries.filter((p) => p.made).length === 2 && tries[0].feet === 11 && tries[0].leave.join('-') === '7-10', JSON.stringify(tries));
+  }
+  check('practice tally for today', text('#tally .tile:first-child .tv') === '2/3', text('#tally .tile:first-child .tv'));
+  await click('[data-act="undo"]');
+  check('practice undo takes back the last try', db().practice.length === 2 && text('#tally .tile:first-child .tv') === '2/2');
+  await click('[data-leave="10"]');
+  check('another leave gets its own aim', text('.card .aim').includes('feet 32'), text('.card .aim'));
+  await click('#pins .pin[data-pin="6"]');
+  check('tapping pins makes a custom leave', text('.leave-pick .chip.on') === '6-10' && text('.card .aim').includes('feet 28'), `${text('.leave-pick .chip.on')} ${text('.card .aim')}`);
+  stopAt('practice');
+  await click('#pins .pin[data-pin="6"]');
+  for (const p of [1, 2, 3, 4, 5, 6, 7, 8, 9]) await click(`#pins .pin[data-pin="${p}"]`);
+  await click('[data-act="made"]');
+  check('a full rack is not a spare to practise', db().practice.length === 2, String(db().practice.length));
+  await nav('#/');
+  check('home shows today\'s practice', text('#practiceToday').includes('2/2 on the 7-10'), text('#practiceToday'));
+  await nav('#/stats');
+  await click('[data-subtab="spares"]');
+  check('Stats shows practice results next to the leave', [...D.querySelectorAll('.leaves > li')].some((li) => li.textContent.includes('7-10') && li.textContent.includes('practice 2/2')));
+  await click('[data-subtab="overview"]');
 
   // ---- Glossary pop-up & help ----
   await nav('#/help');
@@ -314,6 +393,29 @@ async function run() {
   check('lefty lane maps taps to boards', laneVal('feet') === 'Board 5', laneVal('feet'));
   stopAt('lefty');
 
+  // ---- Quick mode: pins only ----
+  await ball([]); // frame 1, recorded with feet on board 5
+  await click('[data-act="quick"]');
+  check('quick mode hides the lane', !$('#lane') && !!$('#quickCard') && db().settings.quick === true);
+  await ball([]); // frame 2: pins only
+  {
+    const shot = db().sessions[0].games.at(-1).frames[1][0];
+    check('quick mode saves pins only', shot.feet === null && shot.target === null && shot.standing.length === 0, JSON.stringify(shot));
+  }
+  await click('[data-act="undo"]');
+  await click('[data-act="undo"]');
+  await click('#saveBtn');
+  {
+    const shot = db().sessions[0].games.at(-1).frames[0][0];
+    check('a ball taken back with Undo keeps its details in quick mode', shot.feet === 5, JSON.stringify(shot));
+  }
+  await click('#saveBtn');
+  await ball([10]);
+  check('quick mode still shows the spare aim, without Use', !!$('#aim') && !$('#aim [data-act="aim"]'), text('#aim'));
+  await ball([]);
+  await click('[data-act="quick"]');
+  check('lane comes back when quick mode is off', !!$('#lane') && db().settings.quick === false);
+
   // ---- Back button: redirects replace history instead of adding to it ----
   await nav('#/');
   const len = W.history.length;
@@ -350,6 +452,58 @@ async function run() {
   stopAt('progress');
   await nav('#/');
   check('home shows the change in average', /^▲ \+\d+\s+average, last 9 games vs\. your first 9$/.test(text('.hero-trend')), text('.hero-trend'));
+
+  // ---- Goals ----
+  await nav('#/goals');
+  const toggleGoal = async (key) => {
+    const sw = $(`[data-goal="${key}"]`);
+    sw.checked = !sw.checked;
+    sw.dispatchEvent(new W.Event('change'));
+    await sleep(50);
+  };
+  const setTarget = async (key, v) => {
+    const input = $(`[data-target="${key}"]`);
+    input.value = String(v);
+    input.dispatchEvent(new W.Event('change'));
+    await sleep(50);
+  };
+  await toggleGoal('spares');
+  await setTarget('spares', 5);
+  check('spare goal saved', JSON.stringify(db().settings.goals.map((g) => [g.key, g.target])) === '[["spares",5]]', JSON.stringify(db().settings.goals));
+  check('a goal you already beat shows as reached', !!$('#goalStatus li.met[data-goal-row="spares"]'));
+  await toggleGoal('average');
+  const avgNow = parseFloat(text('#goalStatus [data-goal-row="average"] strong').replace(/^now\s*/, ''));
+  await setTarget('average', avgNow + 5);
+  check('average goal not reached yet', !!$('#goalStatus [data-goal-row="average"]') && !$('#goalStatus li.met[data-goal-row="average"]'), text('#goalStatus'));
+  stopAt('goals');
+  await nav('#/');
+  check('home lists your goals', D.querySelectorAll('.goals li').length === 2);
+  // A 300 game lifts the 10-game average past the goal: the summary celebrates it, once.
+  await nav(`#/session/${db().sessions.at(-1).id}`);
+  await click('[data-act="newgame"]');
+  await sleep(80);
+  for (let i = 0; i < 12; i++) await click('#saveBtn');
+  await sleep(100);
+  const averageCelebrated = () => [...D.querySelectorAll('.goal-reached')].some((el) => el.textContent.startsWith('Goal reached: Average score'));
+  check('summary says the goal was reached', averageCelebrated(), text('.hero'));
+  check('the spare goal you already beat is not credited to this game', ![...D.querySelectorAll('.goal-reached')].some((el) => el.textContent.includes('Spares made')), text('.hero'));
+  check('goal remembers when it was reached', !!db().settings.goals.find((g) => g.key === 'average').reachedOn);
+  check('summary compares with your average', /^\+\d+\s+vs your average \(\d+\)$/.test(text('#vsAverage')), text('#vsAverage'));
+  stopAt('goalreached');
+  await click('[data-act="undo"]');
+  await sleep(80);
+  check('reopening the game takes the goal back', db().settings.goals.find((g) => g.key === 'average').reachedGame === null);
+  await click('#saveBtn');
+  await sleep(100);
+  check('finishing it again celebrates again', averageCelebrated(), text('.hero'));
+  await click('[data-act="another"]');
+  await sleep(80);
+  for (let i = 0; i < 20; i++) {
+    await click('[data-act="allup"]');
+    await click('#saveBtn');
+  }
+  await sleep(100);
+  check('a bad game afterwards is not celebrated', text('.final-score') === '0' && !$('.goal-reached'), text('.hero'));
 
   // ---- Minimal theme (the default) ----
   const themeColor = () => D.querySelector('meta[name="theme-color"]').content;

@@ -1,4 +1,7 @@
-// Shared UI pieces: line icons and the screen top bar.
+// Shared UI pieces: line icons, the screen top bar, coaching tips, spare aim, label/value rows.
+
+import { infoButton } from './terms.js';
+import { esc } from './util.js';
 
 const PATHS = {
   home: '<path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h4.5v-6h4v6h4.5V9"/>',
@@ -20,11 +23,37 @@ const PATHS = {
   table: '<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16M10 10v9"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/>',
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
   refresh: '<path d="M19.5 11A7.5 7.5 0 0 0 6 6.5L4.5 8"/><path d="M4.5 4v4h4"/><path d="M4.5 13A7.5 7.5 0 0 0 18 17.5l1.5-1.5"/><path d="M19.5 20v-4h-4"/>',
 };
 
 export function icon(name, size = 22) {
   return `<svg class="ico" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${PATHS[name]}</svg>`;
+}
+
+// Coaching tips from stats.tips(). Text can name a bowling center, so it's escaped.
+export function tipsHTML(list) {
+  return list.map((t) => `
+    <div class="tip"><strong>${esc(t.title)}</strong><p>${esc(t.text)}</p>${
+      t.link ? `<a class="link tip-link" href="${esc(t.link.href)}">${esc(t.link.label)} →</a>` : ''}${
+      t.basis ? `<small class="basis">${esc(t.basis)}</small>` : ''}</div>`).join('');
+}
+
+// The suggested spare line from spares.spareAim(). `use` adds a button that puts it on the lane.
+export function aimHTML(aim, { label = 'Spare aim', use = false, info = true, id = 'aim' } = {}) {
+  return `<p class="aim" id="${id}">${icon('target', 18)}<span>${label}: feet <b>${aim.feet}</b> · arrow <b>${aim.target}</b></span>${
+    info ? infoButton('spareAim') : ''}${use ? '<button type="button" class="link" data-act="aim">Use</button>' : ''}</p>`;
+}
+
+// One label/value row of a `.kv` list. `note` sits next to the value, `side` on the right.
+export function kvRow(label, value, { note = '', side = '' } = {}) {
+  return `
+    <li>
+      <span class="kv-label">${label}</span>
+      <span class="kv-val"><strong>${value}</strong>${note ? ` <span class="kv-note">${note}</span>` : ''}</span>
+      <span class="kv-date">${side}</span>
+    </li>`;
 }
 
 // Sticky header. `back` is a hash link; `right` is extra HTML (already escaped).

@@ -1,6 +1,11 @@
 import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/scoring.js';
 import { normalizeDB } from '../js/normalize.js';
-import { computeStats, progress, personalBests, sessionAverages } from '../js/stats.js';
+import {
+  computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
+  scoreWithSpares,
+} from '../js/stats.js';
+import { spareAim, keyPin } from '../js/spares.js';
+import { plural } from '../js/util.js';
 
 // Build frames from a list of pin counts, e.g. [10, 7, 3, ...].
 function game(rolls) {
@@ -202,6 +207,114 @@ test('personal bests and where they were set', () => {
 
 test('a perfect game is 12 strikes in a row', () => {
   eq(personalBests(computeStats([session('2026-10-01', Array(12).fill(10))])).streak.streak, 12);
+});
+
+test('3-game series uses the first three finished games of a session', () => {
+  const st = computeStats([session('2026-10-01', OPEN_90, OPEN_90), session('2026-10-08', OPEN_90, SPARES_190, TURKEY_141, OPEN_90)]);
+  eq(seriesScores(st).map((x) => x.score), [421]);
+  eq(personalBests(st).series.score, 421);
+});
+
+test('scores by game number in a session', () => {
+  const st = computeStats([session('2026-10-01', OPEN_90, SPARES_190, TURKEY_141), session('2026-10-08', OPEN_90, OPEN_90)]);
+  eq(st.byGame.map((b) => [b.no, b.games, b.average]), [[1, 2, 90], [2, 2, 140], [3, 1, 141]]);
+});
+
+test('spare aim: 3-6-9 from the strike line, mirrored for lefties', () => {
+  const line = { feet: 20, target: 10 };
+  eq([spareAim([10], line, 'R').feet, spareAim([7], line, 'R').feet, spareAim([2, 4, 5, 8], line, 'R').feet], [32, 11, 17]);
+  eq([spareAim([7], line, 'L').feet, spareAim([10], line, 'L').feet], [32, 11]);
+  eq([spareAim([3, 6, 10], line, 'R').pin, spareAim([3, 6, 10], line, 'R').feet], [3, 24]);
+  eq([keyPin([7, 10], 'R'), keyPin([7, 10], 'L')], [7, 10]);
+  const edge = spareAim([10], { feet: 35, target: 15 }, 'R');
+  eq([edge.feet, edge.target, edge.clamped], [39, 15, true]);
+  eq([spareAim([1, 2, 4], null, 'R').feet, spareAim([1, 2, 4], null, 'R').target], [20, 10]);
+});
+
+test('leaves remember each time and the spare line that worked', () => {
+  const f = (feet, made) => [{ standing: [10], feet: 20, target: 10 }, { standing: made ? [] : [10], feet, target: 10 }];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [f(32, true), f(32, true), f(25, false)] }] }] });
+  const [l] = computeStats(db.sessions).leaves;
+  eq([l.count, l.made, l.chances, l.history.length], [3, 2, 3, 3]);
+  eq(l.worked, { feet: 32, target: 10, n: 2, made: 2 });
+});
+
+test('tips name the leave you keep missing, with an aim', () => {
+  const miss = [{ standing: [7], feet: 20, target: 10 }, { standing: [7] }];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [miss, miss, miss, miss] }] }] });
+  const tip = tips(computeStats(db.sessions), 'R').find((t) => t.title.startsWith('The 7 '));
+  eq(!!tip && tip.text.includes('board 11') && tip.basis.includes('4 tries'), true);
+});
+
+test('feel tags track how first balls turned out', () => {
+  const ball = (standing, tags) => [{ standing, tags }, ...(standing.length ? [{ standing: [] }] : [])];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [ball([], ['Felt smooth']), ball([10], ['Rushed']), ball([7], ['Rushed'])] }] }] });
+  const st = computeStats(db.sessions);
+  eq(st.feel.map((f) => [f.tag, f.n, f.firstN, f.strikes]), [['Rushed', 2, 2, 0], ['Felt smooth', 1, 1, 1]]);
+});
+
+test('goals are measured over the last 10 games', () => {
+  const [spares, opens] = goalStatus([session('2026-10-01', OPEN_90, OPEN_90, SPARES_190)], [{ key: 'spares', target: 30 }, { key: 'opens', target: 6 }]);
+  eq([spares.value, spares.met, spares.progress, opens.value, opens.met], [33, true, 1, 6.7, false]);
+  eq(Math.round(opens.progress * 100), 90);
+  eq(goalStatus([session('2026-10-01', OPEN_90)], [{ key: 'average', target: 100 }])[0].value, null);
+  const many = [session('2026-10-01', ...Array(5).fill(OPEN_90)), session('2026-10-08', ...Array(10).fill(SPARES_190))];
+  eq(goalStatus(many, [{ key: 'average', target: 190 }])[0].met, true);
+  // Leaving out the newest game shows where you stood before it.
+  const last = many[1].games.at(-1);
+  eq(goalStatus(many, [{ key: 'average', target: 190 }], last)[0].value, 180);
+});
+
+test('a goal is credited only to the game that got you there', () => {
+  const s = session('2026-10-01', OPEN_90, OPEN_90, OPEN_90, SPARES_190);
+  const last = s.games.at(-1);
+  // Average 90 → 115 with the last game: an "at least 100" goal is crossed by it.
+  eq(goalsCrossed([s], [{ key: 'average', target: 100 }], last).map((g) => g.key), ['average']);
+  // Already beating an "at most 10 open frames" goal before it: not credited.
+  eq(goalsCrossed([s], [{ key: 'opens', target: 10 }], last), []);
+  // Not reached even after it.
+  eq(goalsCrossed([s], [{ key: 'average', target: 200 }], last), []);
+  eq(goalText({ key: 'opens', target: 2.5 }), 'Open frames a game at most 2.5');
+});
+
+test('score with every spare made', () => {
+  eq(scoreWithSpares(game(OPEN_90)), 190);
+  eq(scoreWithSpares(game(SPARES_190)), 190);
+  eq(scoreWithSpares(game(Array(12).fill(10))), 300);
+  // Strikes, then X 7-2 in the 10th (286): the 2 becomes the spare.
+  eq([scoreGame(game([...Array(10).fill(10), 7, 2])).total, scoreWithSpares(game([...Array(10).fill(10), 7, 2]))], [286, 287]);
+});
+
+test('series, empty leaves and plurals', () => {
+  eq([seriesOf(session('2026-10-01', OPEN_90, OPEN_90)), seriesOf(session('2026-10-01', OPEN_90, OPEN_90, SPARES_190, OPEN_90))], [null, 370]);
+  eq([keyPin([], 'R'), spareAim([], null, 'R')], [null, null]);
+  eq([plural(1, 'game'), plural(3, 'game'), plural(1, 'try', 'tries'), plural(0, 'try', 'tries')], ['1 game', '3 games', '1 try', '0 tries']);
+});
+
+test('arrow accuracy counts first balls only', () => {
+  const frame = (tags) => [{ standing: [10], tags }, { standing: [], tags: ['Missed left'] }];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [frame(['Hit my arrow']), frame(['Hit my arrow'])] }] }] });
+  const { accuracy } = computeStats(db.sessions);
+  eq([accuracy.arrowHit, accuracy.arrowMiss], [2, 0]);
+});
+
+test('restore drops a goal credit pointing at a missing game', () => {
+  const db = normalizeDB({
+    sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g1', frames: [] }] }],
+    settings: { goals: [{ key: 'spares', target: 50, reachedGame: 'g1', reachedOn: '2026-10-01' }, { key: 'average', target: 150, reachedGame: 'gone', reachedOn: '2026-10-01' }] },
+  });
+  eq(db.settings.goals.map((g) => [g.key, g.reachedGame]), [['spares', 'g1'], ['average', null]]);
+});
+
+test('restore keeps valid practice tries, goals and quick mode', () => {
+  const db = normalizeDB({
+    sessions: [],
+    practice: [{ leave: [10, 10, 11], made: true, feet: 32 }, { leave: [] }, 'x'],
+    settings: { quick: true, goals: [{ key: 'spares', target: 60 }, { key: 'spares', target: 70 }, { key: 'nope', target: 1 }, { key: 'average', target: 999 }] },
+  });
+  eq(db.practice.map((p) => [p.leave, p.made, p.feet, p.target]), [[[10], true, 32, null]]);
+  eq(db.settings.goals.map((g) => [g.key, g.target, g.reachedOn]), [['spares', 60, null]]);
+  eq([db.settings.quick, normalizeDB({ sessions: [] }).settings.quick], [true, false]);
 });
 
 const failed = results.filter((r) => !r.ok);

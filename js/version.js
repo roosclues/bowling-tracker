@@ -1,5 +1,5 @@
 // Set by tools/bump_version.py on every publish (matches VERSION in sw.js). Don't edit by hand.
-export const APP_VERSION = 'v20261029-1523';
+export const APP_VERSION = 'v20261029-1641';
 
 // 'v20261029-0641' -> 'Oct 29, 2026'
 export function versionDate(version = APP_VERSION) {

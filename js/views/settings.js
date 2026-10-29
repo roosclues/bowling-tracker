@@ -5,7 +5,7 @@ import {
 } from '../storage.js';
 import { topbar, icon } from '../ui.js';
 import { APP_VERSION, versionDate } from '../version.js';
-import { fmtDate, toast, go } from '../util.js';
+import { fmtDate, toast, go, plural } from '../util.js';
 
 // Ask the service worker to look for a newer version now. If one exists it downloads in the
 // background, and app.js shows "App updated" once it's ready.
@@ -68,6 +68,7 @@ export function render(root) {
         <h3>At the lanes</h3>
         ${toggle('keepAwake', 'Keep screen on while bowling', 'Stops the phone from sleeping between shots.')}
         ${toggle('haptics', 'Vibrate on taps', 'A small buzz when you tap pins or save a ball.')}
+        ${toggle('quick', 'Quick mode', 'Save only the pins, for league nights. You can also switch it on the game screen.')}
       </section>
 
       <section class="card">
@@ -84,13 +85,13 @@ export function render(root) {
 
       <section class="card">
         <h3>Export</h3>
-        <p class="hint">A spreadsheet (CSV) with one row per ball. Opens in Excel or Google Sheets.</p>
+        <p class="hint">A spreadsheet (CSV) with one row per ball, plus your spare practice tries. Opens in Excel or Google Sheets.</p>
         <button class="btn block" data-act="csv">${icon('table', 20)} Export CSV${shareCSV ? '…' : ''}</button>
       </section>
 
       <section class="card">
         <h3>Storage</h3>
-        <p class="hint" id="storageInfo">${db.sessions.length} session${db.sessions.length === 1 ? "" : "s"} · ${gameCount} game${gameCount === 1 ? "" : "s"}</p>
+        <p class="hint" id="storageInfo">${plural(db.sessions.length, 'session')} · ${plural(gameCount, 'game')} · ${plural(db.practice.length, 'practice try', 'practice tries')}</p>
         <button class="btn danger block" data-act="wipe">${icon('trash', 20)} Delete all data</button>
       </section>
 
@@ -158,7 +159,7 @@ export function render(root) {
         await checkForUpdate(btn);
         break;
       case 'wipe':
-        if (!confirm('Delete ALL sessions and games from this phone? Make a backup first if you might want them back.')) return;
+        if (!confirm('Delete ALL sessions, games, spare practice and goals from this phone? Make a backup first if you might want them back.')) return;
         if (!confirm('Are you sure? This cannot be undone.')) return;
         wipeAll();
         toast('All data deleted');

@@ -2,7 +2,7 @@
 // served only from that version's cache, so old and new files can never mix.
 // Bump VERSION on every deploy (python tools/bump_version.py), or phones keep the old app.
 
-const VERSION = 'v20261029-1523';
+const VERSION = 'v20261029-1641';
 const CACHE = `bowling-${VERSION}`;
 const FILES = [
   './',
@@ -22,6 +22,7 @@ const FILES = [
   'js/pins.js',
   'js/scoreboard.js',
   'js/scoring.js',
+  'js/spares.js',
   'js/stats.js',
   'js/storage.js',
   'js/terms.js',
@@ -30,8 +31,10 @@ const FILES = [
   'js/version.js',
   'js/views/changelog.js',
   'js/views/game.js',
+  'js/views/goals.js',
   'js/views/help.js',
   'js/views/home.js',
+  'js/views/practice.js',
   'js/views/session.js',
   'js/views/settings.js',
   'js/views/stats.js',

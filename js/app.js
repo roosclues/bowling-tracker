@@ -14,6 +14,8 @@ import * as stats from './views/stats.js';
 import * as settings from './views/settings.js';
 import * as help from './views/help.js';
 import * as changelog from './views/changelog.js';
+import * as practice from './views/practice.js';
+import * as goals from './views/goals.js';
 
 const root = document.getElementById('view');
 
@@ -47,6 +49,8 @@ const routes = [
   [/^#\/settings$/, settings.render, 'settings'],
   [/^#\/help$/, help.render, 'help'],
   [/^#\/changelog$/, changelog.render, 'settings'],
+  [/^#\/practice(?:\/([\d-]+))?$/, practice.render, 'bowl'],
+  [/^#\/goals$/, goals.render, 'home'],
   [/^#\/bowl$/, () => {
     const cur = currentGame();
     go(cur ? `#/game/${cur.session.id}/${cur.game.id}` : '#/new', { replace: true });

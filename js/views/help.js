@@ -6,7 +6,7 @@ import { mountLaneMap } from '../lanemap.js';
 import { topbar } from '../ui.js';
 import { esc } from '../util.js';
 
-const ORDER = ['boards', 'feet', 'arrows', 'breakpoint', 'hit', 'strike', 'spare', 'split', 'speed', 'oil'];
+const ORDER = ['boards', 'feet', 'arrows', 'breakpoint', 'hit', 'strike', 'spare', 'split', 'spareAim', 'speed', 'oil', 'quick'];
 
 export function render(root) {
   root.innerHTML = `
@@ -19,6 +19,17 @@ export function render(root) {
           <li><strong>Your line:</strong> tap the lane where your feet started, the arrow the ball rolled over, and (optionally) where it started to hook. Your last feet and arrow are filled in for you.</li>
           <li><strong>More details</strong> (optional): pin hit, ball speed, how it felt.</li>
           <li>Press <strong>Save</strong>. Made a mistake? <strong>Undo</strong> brings the last ball back so you can fix it.</li>
+        </ol>
+        <p class="hint">In a hurry? <strong>Pins only</strong> under the lane switches to quick mode, which saves just the pins.</p>
+      </section>
+
+      <section class="card">
+        <h3>Getting better</h3>
+        <ol>
+          <li><strong>Spare aim:</strong> on a spare ball the app suggests where to stand and which arrow to hit (the 3-6-9 system). Tap <strong>Use</strong> to put it on the lane.</li>
+          <li><strong>Spare practice</strong> (Home): pick a leave, throw at it, and tap Made or Missed. You'll see your make rate for each leave grow over time.</li>
+          <li><strong>Goals</strong> (Home): set a target, like 60% spares, and watch your last 10 games close in on it.</li>
+          <li><strong>Stats</strong> shows what's working: best lines, how accurate you are, how your speed and feel affect strikes, and how your scores change from game to game.</li>
         </ol>
       </section>
 

@@ -4,6 +4,24 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261029-1641',
+    title: 'Spare practice, goals and smarter coaching',
+    items: [
+      'Spare practice (Home): pick a leave, throw at it, tap Made or Missed, and watch your make rate for each leave over time. Home shows today\'s practice, and Stats shows your practice results next to each leave.',
+      'Spare aim: on every spare ball the app suggests where to stand and which arrow to hit, using the 3-6-9 system from your usual strike line. Tap Use to put it on the lane.',
+      'Goals (Home): set targets like at least 60% spares or at most 3 open frames a game, measured over your last 10 games. The game summary says when a game gets you there.',
+      'Quick mode: "Pins only" on the game screen (or in Settings) saves just the pins, for busy league nights. The spare aim still shows.',
+      '"Same as last ball" copies the feet, arrow, breakpoint and speed from your last ball of the same kind.',
+      'Stats now has tabs: Overview, First ball, Spares and Feel.',
+      'New in Stats: how repeatable your feet and arrow are, scores and strikes by game 1, 2, 3 of a session, strike rate by ball speed, what "Rushed" and other feelings do to your strikes, the average breakpoint for each line, and an oil pattern filter.',
+      'Tap a leave in Stats to see the last 8 times you left it, the aim for it, and the line that has worked for you.',
+      'Game summary: how the game compares with your average, what you would have scored with every spare, and a link to practice each spare you missed.',
+      'Session screen: strikes, spares, open frames, 3-game series and tips for that session, plus a link to your stats at that center. Your session notes show on the game screen as a reminder.',
+      'More coaching tips, each saying how much data it is based on. High series is now a personal best.',
+      'The backup reminder now also comes up 2 weeks after your last backup, not just after 5 sessions. The spreadsheet export includes your practice tries and session notes.',
+    ],
+  },
+  {
     version: 'v20261029-1523',
     title: 'Minimal is now the main theme',
     items: [

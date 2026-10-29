@@ -3,14 +3,17 @@
 // db = {
 //   version: 1,
 //   settings: { hand: 'R'|'L', last: {center, ball, oil}, sessionsSinceBackup, lastBackup, keepAwake, haptics,
-//               skin: 'minimal'|'classic', seenVersion },
+//               skin: 'minimal'|'classic', seenVersion, quick,
+//               goals: [{ key, target, reachedOn, reachedGame }] },
 //   sessions: [{ id, date, center, lane, ball, oil, notes,
-//                games: [{ id, frames: [[shot, ...] x10], done, score }] }]
+//                games: [{ id, frames: [[shot, ...] x10], done, score }] }],
+//   practice: [{ id, date, leave: [pins], made, feet, target }]   (spare practice tries)
 // }
 // shot = { standing: [pins], feet, target, breakpoint, hit, speed, tags: [], note }
 
 import { scoreGame, knocked } from './scoring.js';
 import { normalizeDB } from './normalize.js';
+import { goalsCrossed } from './stats.js';
 import { todayISO, uid } from './util.js';
 
 const KEY = 'bowltrack.v1';
@@ -100,7 +103,39 @@ export function refreshScore(game) {
   game.score = scoreGame(game.frames).total;
 }
 
+// Marks the goals that finishing `game` took from not met to met, so its summary can say so.
+// reachedOn keeps the date the goal was first reached. The caller saves.
+export function stampReachedGoals(session, game) {
+  for (const goal of goalsCrossed(db.sessions, db.settings.goals, game)) {
+    goal.reachedGame = game.id;
+    goal.reachedOn ??= session.date;
+  }
+}
+
+// Takes back what stampReachedGoals credited to `game`, when it is reopened or deleted.
+// The caller saves.
+export function unstampGoals(game) {
+  for (const goal of db.settings.goals) {
+    if (goal.reachedGame !== game.id) continue;
+    goal.reachedGame = null;
+    goal.reachedOn = null;
+  }
+}
+
 // ---------- Backup / restore / export ----------
+
+const BACKUP_EVERY_SESSIONS = 5;
+const BACKUP_EVERY_DAYS = 14;
+
+// Null when the backup is recent enough; otherwise { sessions, days, never } for the reminder.
+export function backupDue() {
+  const sessions = db.settings.sessionsSinceBackup || 0;
+  if (!sessions) return null;
+  const since = db.settings.lastBackup ?? db.sessions[0]?.date;
+  const days = since ? Math.max(0, Math.floor((Date.parse(todayISO()) - Date.parse(since)) / 864e5)) : 0;
+  if (sessions < BACKUP_EVERY_SESSIONS && days < BACKUP_EVERY_DAYS) return null;
+  return { sessions, days, never: !db.settings.lastBackup };
+}
 
 function download(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -198,7 +233,7 @@ function csvCell(v) {
 
 export async function exportCSV({ share = false } = {}) {
   const header = ['date', 'center', 'lane', 'ball', 'oil', 'game', 'game_score', 'frame', 'ball_in_frame',
-    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed', 'tags', 'note'];
+    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed', 'tags', 'note', 'session_notes'];
   const rows = [header];
   for (const s of db.sessions) {
     s.games.forEach((g, gi) => {
@@ -207,10 +242,15 @@ export async function exportCSV({ share = false } = {}) {
         shots.forEach((shot, si) => {
           rows.push([s.date, s.center, s.lane, s.ball, s.oil, gi + 1, g.score, fi + 1, si + 1, k[si],
             shot.standing.join(' '), shot.feet, shot.target, shot.breakpoint, shot.hit, shot.speed,
-            (shot.tags || []).join('; '), shot.note]);
+            (shot.tags || []).join('; '), shot.note, s.notes]);
         });
       });
     });
+  }
+  // Spare practice tries follow, with "practice" in the game column.
+  for (const p of db.practice) {
+    rows.push([p.date, '', '', '', '', 'practice', '', '', 2, p.made ? p.leave.length : '',
+      p.made ? '' : p.leave.join(' '), p.feet, p.target, '', '', '', '', '', '']);
   }
   const text = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
   await deliver(new Blob(['﻿' + text], { type: 'text/csv' }), `bowling-shots-${todayISO()}.csv`, share);

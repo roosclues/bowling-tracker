@@ -1,9 +1,11 @@
-// Session setup form and session detail (list of games).
+// Session setup form and session detail (games, how the session went, tips).
 
-import { db, save, findSession, newGame, requestPersist } from '../storage.js';
+import { db, save, findSession, newGame, requestPersist, unstampGoals } from '../storage.js';
+import { computeStats, tips, seriesOf } from '../stats.js';
 import { infoButton } from '../terms.js';
-import { topbar, icon } from '../ui.js';
-import { esc, uid, todayISO, fmtDate, go, toast, avg } from '../util.js';
+import { topbar, icon, tipsHTML } from '../ui.js';
+import { esc, uid, todayISO, fmtDate, go, toast, avg, fmtPct, plural } from '../util.js';
+import { showStatsFor } from './stats.js';
 
 const OILS = ['Unknown', 'House shot', 'Sport / league pattern', 'Dry lanes', 'Oily lanes'];
 
@@ -87,6 +89,8 @@ export function renderDetail(root, sid) {
   }
   const done = s.games.filter((g) => g.done);
   const average = avg(done.map((g) => g.score));
+  const series = seriesOf(s);
+  const st = computeStats([s]);
 
   root.innerHTML = `
     ${topbar({
@@ -96,13 +100,20 @@ export function renderDetail(root, sid) {
       right: `<a class="tb-action" href="#/session/${s.id}/edit" aria-label="Edit session">${icon('edit', 20)}</a>`,
     })}
     <div class="page">
-      <div class="tiles">
+      <div class="tiles four" id="sessionTiles">
         <div class="tile"><div class="tv">${s.games.length}</div><div class="tl">Games</div></div>
         <div class="tile"><div class="tv">${average === null ? '–' : Math.round(average)}</div><div class="tl">Average</div></div>
         <div class="tile"><div class="tv">${done.length ? Math.max(...done.map((g) => g.score)) : '–'}</div><div class="tl">High</div></div>
+        <div class="tile"><div class="tv">${series ?? '–'}</div><div class="tl">Series</div></div>
+        <div class="tile"><div class="tv">${fmtPct(st.strikes, st.firstBalls)}</div><div class="tl">Strikes</div></div>
+        <div class="tile"><div class="tv">${fmtPct(st.sparesMade, st.spareChances)}</div><div class="tl">Spares made</div></div>
+        <div class="tile"><div class="tv">${st.games.length ? (st.opens / st.games.length).toFixed(1) : '–'}</div><div class="tl">Open frames a game</div></div>
+        <div class="tile"><div class="tv">${st.firstBallAvg === null ? '–' : st.firstBallAvg.toFixed(1)}</div><div class="tl">1st-ball pins</div></div>
       </div>
       <p class="meta">${[s.lane && `Lane ${esc(s.lane)}`, s.ball && esc(s.ball), s.oil && s.oil !== 'Unknown' && esc(s.oil)].filter(Boolean).join(' · ')}</p>
       ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ''}
+      ${tipsHTML(tips(st, db.settings.hand))}
+      ${s.center && done.length ? `<button type="button" class="link" data-act="stats" id="centerStats">See all your stats at ${esc(s.center)} →</button>` : ''}
       <ul class="list">
         ${s.games.map((g, i) => `
           <li>
@@ -130,8 +141,11 @@ export function renderDetail(root, sid) {
       s.games.push(g);
       save();
       go(`#/game/${s.id}/${g.id}`);
+    } else if (act === 'stats') {
+      showStatsFor({ center: s.center });
     } else if (act === 'delete') {
-      if (!confirm(`Delete this session and its ${s.games.length} game(s)? This cannot be undone.`)) return;
+      if (!confirm(`Delete this session and its ${plural(s.games.length, 'game')}? This cannot be undone.`)) return;
+      s.games.forEach(unstampGoals);
       db.sessions.splice(db.sessions.indexOf(s), 1);
       save();
       go('#/');

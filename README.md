@@ -1,6 +1,6 @@
 # Bowling Tracker
 
-A phone app (Progressive Web App) for logging every ball you bowl: pins left, where your feet started, which arrow the ball crossed, the breakpoint, pin hit, speed and how it felt. It works out your score and shows which feet + arrow lines get you the most strikes.
+A phone app (Progressive Web App) for logging every ball you bowl: pins left, where your feet started, which arrow the ball crossed, the breakpoint, pin hit, speed and how it felt. It works out your score, shows which feet + arrow lines get you the most strikes, suggests where to aim for each spare, and has a spare practice mode and goals.
 
 Plain HTML, CSS and JavaScript, with no build step and no dependencies. Data stays on the phone (browser localStorage), with backup/restore and CSV export in Settings.
 
@@ -20,7 +20,7 @@ The service worker serves the app from its offline cache, so edits don't show up
 python tests/run_tests.py
 ```
 
-This runs the scoring tests (`tests/test.html`) and an end-to-end run of the app in a phone-sized frame (`tests/e2e.html`) using headless Edge. Both pages also work in a normal browser while the server is running. To freeze the app at a step and look at it, use `tests/e2e.html?stop=game` (other steps: `welcome`, `summary300`, `pins`, `summary`, `home`, `stats`, `help`, `lanetop`, `lanebottom`, `changelog`, `settings`, `about`, `lefty`).
+This runs the scoring tests (`tests/test.html`) and an end-to-end run of the app in a phone-sized frame (`tests/e2e.html`) using headless Edge. Both pages also work in a normal browser while the server is running. To freeze the app at a step and look at it, use `tests/e2e.html?stop=game` (the full list of steps is at the top of `tests/e2e.js`, e.g. `spareaim`, `summary`, `session`, `stats`, `statsfirst`, `statsspares`, `practice`, `goals`, `goalreached`). Add `&skin=classic` to see the Midnight lanes theme.
 
 ## Put it on your phone
 
@@ -42,7 +42,7 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 
    It gives `sw.js` and `js/version.js` a new version (without one, phones keep running the old app), stamps the `'next'` changelog entry with that version, and checks that every app file is in the offline list. It refuses to run if there's no `'next'` entry; use `--no-changelog` for fixes nobody will notice. The phone downloads the update the next time the app is opened online, and uses it from the following launch.
 
-**Backups:** your data lives only in that phone's browser. Use Settings → Backup now and then; the app reminds you every 5 sessions. "Save backup to Drive / email" shares a `.txt` file, because Android won't share `.json` files. Restore accepts either. A restore can be undone from Settings.
+**Backups:** your data lives only in that phone's browser. Use Settings → Backup now and then; the app reminds you after 5 sessions, or 2 weeks after the last backup. "Save backup to Drive / email" shares a `.txt` file, because Android won't share `.json` files. Restore accepts either. A restore can be undone from Settings.
 
 ## Project layout
 
@@ -54,7 +54,8 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 | `js/scoring.js` | Bowling score rules, split detection |
 | `js/storage.js` | Saving, backup/restore, CSV export, sync between open copies |
 | `js/normalize.js` | Checks and repairs saved or restored data |
-| `js/stats.js` | Stat calculations, progress (first vs latest games), personal bests, coaching tips |
+| `js/stats.js` | Stat calculations, progress (first vs latest games), personal bests, goals, coaching tips |
+| `js/spares.js` | Spare aiming (3-6-9 system) from the bowler's strike line |
 | `js/lane.js`, `js/pins.js` | Tappable lane and pin-deck pickers |
 | `js/lanemap.js` | To-scale lane on the Help screen |
 | `js/changelog.js`, `js/version.js` | Update history and the current version (shown in Settings) |

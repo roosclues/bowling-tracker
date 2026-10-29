@@ -56,6 +56,23 @@ export function avg(values) {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
 
+// "1 game", "3 games". Pass the plural for irregular words: plural(n, 'try', 'tries').
+export function plural(n, word, many = `${word}s`) {
+  return `${n} ${n === 1 ? word : many}`;
+}
+
+// Returns a check that is false for a second tap landing right after the first, so a
+// double tap on Save, Made or Undo only counts once.
+export function tapGuard(ms = 350) {
+  let until = 0;
+  return () => {
+    const now = performance.now();
+    if (now < until) return false;
+    until = now + ms;
+    return true;
+  };
+}
+
 // Shows a message that stays until it's dismissed with its × button (or replaced by a newer one).
 export function toast(message) {
   const el = document.getElementById('toast');

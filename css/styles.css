@@ -215,7 +215,8 @@ h3 { font-size: 1rem; margin: 0 0 6px; letter-spacing: -0.005em; }
 .btn.danger { background: transparent; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); }
 .btn.block { display: flex; width: 100%; margin: 10px 0; }
 .btn.big { min-height: 56px; font-size: 1.05rem; }
-.link { background: none; border: 0; color: var(--link); font: inherit; font-size: 0.88rem; font-weight: 650; padding: 6px 0; cursor: pointer; text-decoration: none; }
+.link { position: relative; background: none; border: 0; color: var(--link); font: inherit; font-size: 0.88rem; font-weight: 650; padding: 6px 0; cursor: pointer; text-decoration: none; }
+.link::after { content: ""; position: absolute; inset: -6px -8px; }
 .file-btn { cursor: pointer; }
 .seg { display: flex; gap: 8px; }
 .seg.wrap { flex-wrap: wrap; }
@@ -226,11 +227,12 @@ h3 { font-size: 1rem; margin: 0 0 6px; letter-spacing: -0.005em; }
   font: inherit; font-size: 0.9rem; font-weight: 550; cursor: pointer;
 }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 700; }
+.info::after { content: ""; position: absolute; inset: -11px; }
 .info {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; margin-left: 5px; padding: 0; vertical-align: middle;
   border-radius: 50%; border: 1.5px solid var(--muted); background: transparent;
-  color: var(--ink-2); font: italic 700 0.74rem/1 Georgia, serif; cursor: pointer;
+  color: var(--ink-2); font: italic 700 0.74rem/1 Georgia, serif; cursor: pointer; position: relative;
 }
 .pill {
   display: inline-block; padding: 4px 11px; border-radius: 999px;
@@ -321,6 +323,7 @@ textarea { resize: vertical; }
 .tip p { margin: 4px 0 0; font-size: 0.92rem; color: var(--ink-2); }
 .empty { text-align: center; padding: 30px 0; color: var(--ink-2); }
 .actions-row { display: flex; gap: 10px; margin: 14px 0; }
+.hero .actions-row { margin: 10px 0; }
 .actions-row .btn { flex: 1; }
 
 /* ---------- Hero (dark brand card) ---------- */
@@ -488,8 +491,9 @@ button.box { cursor: pointer; }
 .tag-split { color: var(--split); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* ---------- Stats ---------- */
-.filters { display: flex; gap: 8px; }
-.filters select { flex: 1; min-width: 0; min-height: 42px; font-size: 0.85rem; padding: 8px; border-radius: 999px; background: var(--surface); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.filters select { flex: 1 1 40%; min-width: 0; min-height: 44px; font-size: 0.85rem; padding: 8px; border-radius: 999px; background: var(--surface); }
+.tbl-wrap { overflow-x: auto; margin: 0 -2px; padding: 0 2px; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 0.86rem; margin-top: 6px; }
 .tbl th { text-align: left; color: var(--muted); font-weight: 700; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding: 6px 4px; border-bottom: 1px solid var(--line); }
 .tbl td { padding: 9px 4px; border-bottom: 1px solid var(--line); }
@@ -497,8 +501,20 @@ button.box { cursor: pointer; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 .table-view summary { color: var(--link); font-size: 0.86rem; font-weight: 650; cursor: pointer; padding: 6px 0; }
 .leaves { list-style: none; margin: 0; padding: 0; }
-.leaves li { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
-.leaves li:first-child { border-top: 0; }
+.leaves > li { padding: 9px 0; border-top: 1px solid var(--line); }
+.leaves > li:first-child { border-top: 0; }
+.leaves summary { display: flex; align-items: center; gap: 12px; list-style: none; cursor: pointer; border-radius: 8px; }
+.leaves summary::-webkit-details-marker { display: none; }
+.leaves summary::after { content: "+"; flex: none; width: 20px; text-align: center; font-size: 1.3rem; font-weight: 400; color: var(--muted); }
+.leaves details[open] > summary::after { content: "−"; }
+.leaves summary:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.leave-info { flex: 1; min-width: 0; }
+.leave-info > span { display: block; }
+.leave-more { margin: 8px 0 0 52px; }
+.leave-hist { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; color: var(--ink-2); }
+.leave-hist li { padding: 3px 0; }
+.leave-more .link { display: inline-block; margin-top: 6px; }
+.leave-cell { display: inline-flex; align-items: center; gap: 8px; }
 .bars { display: grid; gap: 10px; margin-top: 8px; }
 .bar-row { display: grid; grid-template-columns: 104px 1fr 44px; align-items: center; gap: 8px; font-size: 0.86rem; }
 .bar-track { height: 14px; }
@@ -537,7 +553,7 @@ button.box { cursor: pointer; }
 .kv-val strong { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
 .kv-note { font-size: 0.78rem; font-weight: 650; color: var(--accent-text); }
 .kv-date { flex: none; min-width: 52px; text-align: right; font-size: 0.78rem; color: var(--muted); }
-.hero a.hero-trend { display: block; margin-top: 6px; font-size: 0.84rem; color: var(--brand-ink-2); text-decoration: none; }
+.hero .hero-trend { display: block; margin-top: 6px; font-size: 0.84rem; color: var(--brand-ink-2); text-decoration: none; }
 .hero-trend b { margin-right: 4px; color: var(--brand-ink); }
 .hero-trend b.up { color: #7ee2a8; }
 .hero-trend b.down { color: #ff9b9b; }
@@ -566,6 +582,48 @@ button.box { cursor: pointer; }
 .help li strong { color: var(--ink); }
 .glossary dt { font-weight: 750; margin-top: 14px; }
 .glossary dd { margin: 3px 0 0; color: var(--ink-2); font-size: 0.92rem; }
+
+/* ---------- Coaching: tips, spare aim, goals, practice ---------- */
+.tip .basis { display: block; margin-top: 5px; font-size: 0.76rem; color: var(--ink-2); }
+.tip .tip-link { display: inline-block; margin-top: 6px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.aim { display: flex; align-items: center; gap: 8px; margin: 0 2px 10px; font-size: 0.92rem; color: var(--ink-2); }
+.aim .ico { color: var(--mk-target); }
+.aim b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.aim .link { margin-left: auto; padding: 10px 4px; }
+.card .aim { margin: 2px 0 4px; }
+.focus { display: flex; align-items: flex-start; gap: 8px; margin: 0 2px 10px; font-size: 0.86rem; color: var(--ink-2); }
+.focus .ico { margin-top: 2px; color: var(--muted); }
+.goals { list-style: none; margin: 0; padding: 0; }
+.goals li { padding: 10px 0; border-top: 1px solid var(--line); }
+.goals li:first-child { border-top: 0; }
+.goal-top { display: flex; align-items: baseline; gap: 10px; font-size: 0.92rem; }
+.goal-top span { flex: 1; min-width: 0; color: var(--ink-2); }
+.goal-top strong { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.goal-bar { height: 4px; margin-top: 7px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.goal-bar i { display: block; height: 100%; border-radius: 2px; background: var(--chart); }
+.goals li.met .goal-bar i { background: var(--good); }
+.goals li.met strong, .goal-note { color: var(--good); }
+.goal-note { display: block; margin-top: 4px; font-size: 0.78rem; font-weight: 600; }
+.goal-edit .goal-label { flex: 1; min-width: 0; cursor: pointer; }
+.goal-edit .goal-label .hint { display: block; margin: 2px 0 0; }
+.goal-edit .goal-target { flex: none; width: 84px; min-height: 44px; padding: 6px 8px; text-align: right; font-variant-numeric: tabular-nums; }
+.hero .goal-reached { display: block; width: fit-content; max-width: 100%; margin: 6px auto 0; white-space: normal; }
+.leave-pick { margin: 4px 0 12px; }
+.leave-pick .chip { min-height: 44px; padding: 6px 12px; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.actionbar .btn.icon-only { flex: 0 0 56px; padding: 0; }
+.subtabs {
+  position: sticky; top: calc(60px + env(safe-area-inset-top)); z-index: 4;
+  display: flex; margin: 10px -16px 4px; padding: 0 16px;
+  background: var(--page); border-bottom: 1px solid var(--line);
+}
+.subtab {
+  position: relative; flex: 1; min-height: 46px; padding: 0 4px; border: 0; background: none;
+  color: var(--ink-2); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.subtab[aria-selected="true"] { color: var(--ink); }
+.subtab[aria-selected="true"]::after { content: ""; position: absolute; left: 14%; right: 14%; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); }
+.subtab:focus-visible { outline: 2px solid var(--link); outline-offset: -4px; border-radius: 8px; }
 
 /* ---------- Toast, dialog, strike flash ---------- */
 #toast {
@@ -708,6 +766,15 @@ dialog p { white-space: pre-line; color: var(--ink-2); }
 [data-skin="minimal"] input, [data-skin="minimal"] select, [data-skin="minimal"] textarea { border-radius: 8px; background: var(--page); border-color: var(--border); }
 [data-skin="minimal"] .filters select { border-radius: 8px; background: var(--page); }
 [data-skin="minimal"] .pill { font-weight: 500; color: var(--ink-2); }
+[data-skin="minimal"] .hero .new-high { color: var(--accent-ink); }
+[data-skin="minimal"] .link { font-weight: 500; }
+[data-skin="minimal"] .goal-top strong { font-weight: 500; }
+[data-skin="minimal"] .goal-bar, [data-skin="minimal"] .goal-bar i { border-radius: 0; }
+[data-skin="minimal"] .goal-bar i { background: var(--ink); }
+[data-skin="minimal"] .goals li.met .goal-bar i { background: var(--good); }
+[data-skin="minimal"] .subtabs { margin: 10px -20px 4px; padding: 0 20px; }
+[data-skin="minimal"] .subtab { font-weight: 500; }
+[data-skin="minimal"] .subtab[aria-selected="true"]::after { left: 20%; right: 20%; height: 2px; border-radius: 0; background: var(--ink); }
 [data-skin="minimal"] .lr-btns button { border-radius: 8px; background: var(--page); }
 
 /* Arrangement: sections separated by lines instead of boxed cards */
@@ -756,7 +823,7 @@ dialog p { white-space: pre-line; color: var(--ink-2); }
 [data-skin="minimal"] .hero-label, [data-skin="minimal"] .hero-side dt { text-transform: none; letter-spacing: 0; font-size: 0.85rem; font-weight: 500; color: var(--muted); }
 [data-skin="minimal"] .hero-num { font-size: 4.4rem; font-weight: 300; letter-spacing: -0.05em; }
 [data-skin="minimal"] .hero-side dd { font-weight: 400; }
-[data-skin="minimal"] .hero a.hero-trend { color: var(--ink-2); }
+[data-skin="minimal"] .hero .hero-trend { color: var(--ink-2); }
 [data-skin="minimal"] .hero-trend b { color: var(--ink); }
 [data-skin="minimal"] .hero-trend b.up { color: var(--good); }
 [data-skin="minimal"] .hero-trend b.down { color: var(--bad); }

@@ -2,7 +2,8 @@
 // Anything untrustworthy (bad ids, out-of-range numbers, impossible pins) is dropped or
 // recomputed here instead of reaching the UI. Scores and "done" are always recomputed.
 
-import { frameDone, pinsBefore, scoreGame, gameDone } from './scoring.js';
+import { frameDone, pinsBefore, scoreGame, gameDone, ALL_PINS } from './scoring.js';
+import { GOAL_TYPES } from './stats.js';
 import { HITS } from './terms.js';
 import { uid, todayISO } from './util.js';
 
@@ -78,12 +79,41 @@ function normSession(raw, seen) {
   };
 }
 
+// One spare-practice try: the leave you tried, whether you made it, and your line.
+function normAttempt(raw, seen) {
+  if (!isObj(raw)) return null;
+  const leave = [...new Set(Array.isArray(raw.leave) ? raw.leave : [])].filter((p) => ALL_PINS.includes(p)).sort((a, b) => a - b);
+  if (!leave.length) return null;
+  return {
+    id: freshId(raw.id, seen),
+    date: date(raw.date) ?? todayISO(),
+    leave,
+    made: raw.made === true,
+    feet: int(raw.feet, 1, 39),
+    target: int(raw.target, 1, 39),
+  };
+}
+
+// `gameIds` are the games that exist: a goal can't stay credited to a game that's gone.
+function normGoals(raw, gameIds) {
+  const out = [];
+  for (const g of Array.isArray(raw) ? raw : []) {
+    const type = isObj(g) && GOAL_TYPES.find((t) => t.key === g.key);
+    const target = type && num(g.target, 0, type.max);
+    if (target == null || out.some((x) => x.key === type.key)) continue;
+    out.push({ key: type.key, target, reachedOn: date(g.reachedOn), reachedGame: gameIds.has(g.reachedGame) ? g.reachedGame : null });
+  }
+  return out;
+}
+
 // Throws if `data` isn't a Bowling Tracker database at all; otherwise returns a clean copy.
 export function normalizeDB(data) {
   if (!isObj(data) || !Array.isArray(data.sessions)) throw new Error('This file is not a Bowling Tracker backup.');
   const s = isObj(data.settings) ? data.settings : {};
   const last = isObj(s.last) ? s.last : {};
   const seen = new Set();
+  const sessions = data.sessions.map((x) => normSession(x, seen)).sort((a, b) => a.date.localeCompare(b.date));
+  const gameIds = new Set(sessions.flatMap((x) => x.games.map((g) => g.id)));
   return {
     version: 1,
     settings: {
@@ -95,7 +125,10 @@ export function normalizeDB(data) {
       haptics: s.haptics !== false,
       skin: SKINS.includes(s.skin) ? s.skin : SKINS[0],
       seenVersion: typeof s.seenVersion === 'string' && /^v[\w-]{1,30}$/.test(s.seenVersion) ? s.seenVersion : null,
+      quick: s.quick === true,
+      goals: normGoals(s.goals, gameIds),
     },
-    sessions: data.sessions.map((x) => normSession(x, seen)).sort((a, b) => a.date.localeCompare(b.date)),
+    sessions,
+    practice: (Array.isArray(data.practice) ? data.practice : []).slice(-20000).map((x) => normAttempt(x, seen)).filter(Boolean),
   };
 }
