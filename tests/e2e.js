@@ -297,8 +297,12 @@ async function run() {
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
   stopAt('settings');
+  check('settings shows a message', text('#toast .toast-msg') === 'Left-handed lane view', text('#toast .toast-msg'));
+  // A new version taking over shows "App updated", replacing the older message.
+  W.navigator.serviceWorker.dispatchEvent(new W.Event('controllerchange'));
+  W.navigator.serviceWorker.dispatchEvent(new W.Event('controllerchange'));
   await sleep(3500);
-  check('messages stay until dismissed', $('#toast').classList.contains('show') && text('#toast .toast-msg') === 'Left-handed lane view', text('#toast .toast-msg'));
+  check('the update message stays until dismissed', $('#toast').classList.contains('show') && text('#toast .toast-msg').startsWith('App updated.'), text('#toast .toast-msg'));
   await click('#toast .toast-x');
   check('the × button dismisses the message', !$('#toast').classList.contains('show'));
   W.scrollTo(0, D.body.scrollHeight);
@@ -347,12 +351,10 @@ async function run() {
   await nav('#/');
   check('home shows the change in average', /^▲ \+\d+\s+average, last 9 games vs\. your first 9$/.test(text('.hero-trend')), text('.hero-trend'));
 
-  // ---- Minimal theme ----
+  // ---- Minimal theme (the default) ----
   const themeColor = () => D.querySelector('meta[name="theme-color"]').content;
   await nav('#/settings');
-  await click('[data-skin="minimal"]');
-  await sleep(100);
-  check('minimal theme saved and applied', db().settings.skin === 'minimal' && D.documentElement.dataset.skin === 'minimal');
+  check('minimal is the default theme', db().settings.skin === 'minimal' && D.documentElement.dataset.skin === 'minimal' && $('.chip[data-skin="minimal"]').classList.contains('on'), db().settings.skin);
   check('minimal theme uses the Inter font', W.getComputedStyle(D.body).fontFamily.startsWith('Inter'), W.getComputedStyle(D.body).fontFamily);
   const page = W.getComputedStyle(D.documentElement).getPropertyValue('--page').trim();
   check('status bar matches the page color', themeColor() === page && ['#ffffff', '#0b0b0c'].includes(page), `${themeColor()} vs ${page}`);
@@ -376,7 +378,7 @@ async function run() {
   W.scrollTo(0, $('#demoLane').getBoundingClientRect().top + W.scrollY - 70);
   stopAt('minhelp');
   await nav('#/settings');
-  await click('[data-skin="classic"]');
+  await click('.chip[data-skin="classic"]');
   await sleep(100);
   check('back to the classic theme', D.documentElement.dataset.skin === 'classic' && themeColor() === '#0b1222', themeColor());
 }

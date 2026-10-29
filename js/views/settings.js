@@ -57,9 +57,9 @@ export function render(root) {
 
       <section class="card">
         <h3>Theme</h3>
-        <p class="hint">Midnight lanes has a dark top bar, a wood lane and an alley-style scoreboard. Minimal uses plain colors, a clean font, and shows numbers in simple rows. Both follow your phone's light or dark mode.</p>
+        <p class="hint">Minimal uses plain colors, a clean font, and shows numbers in simple rows. Midnight lanes has a dark top bar, a wood lane and an alley-style scoreboard. Both follow your phone's light or dark mode.</p>
         <div class="seg full">
-          ${[['classic', 'Midnight lanes'], ['minimal', 'Minimal']].map(([key, label]) =>
+          ${[['minimal', 'Minimal'], ['classic', 'Midnight lanes']].map(([key, label]) =>
             `<button type="button" class="chip${db.settings.skin === key ? ' on' : ''}" data-skin="${key}">${label}</button>`).join('')}
         </div>
       </section>

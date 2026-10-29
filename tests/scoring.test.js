@@ -155,10 +155,10 @@ test('restore ignores balls after an unfinished frame', () => {
   eq(g.frames[1].length, 0);
 });
 
-test('restore keeps a known theme and resets an unknown one', () => {
-  eq(normalizeDB({ sessions: [], settings: { skin: 'minimal' } }).settings.skin, 'minimal');
-  eq(normalizeDB({ sessions: [], settings: { skin: '<b>' } }).settings.skin, 'classic');
-  eq(normalizeDB({ sessions: [] }).settings.skin, 'classic');
+test('restore keeps a known theme and resets an unknown one to Minimal', () => {
+  eq(normalizeDB({ sessions: [], settings: { skin: 'classic' } }).settings.skin, 'classic');
+  eq(normalizeDB({ sessions: [], settings: { skin: '<b>' } }).settings.skin, 'minimal');
+  eq(normalizeDB({ sessions: [] }).settings.skin, 'minimal');
 });
 
 // A session on `date` with one finished game per list of rolls.

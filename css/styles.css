@@ -1,6 +1,7 @@
 /* Bowling Tracker — two themes (Settings → Theme):
-   "midnight lanes" (default): deep navy, amber highlights, wood lane.
-   "minimal" (html[data-skin="minimal"], at the end of this file): plain colors, Inter, rows instead of boxes. */
+   "minimal" (default, html[data-skin="minimal"], at the end of this file): plain colors, Inter, rows
+   instead of boxes. It overrides the base styles below.
+   "midnight lanes" (html[data-skin="classic"]): the base styles: deep navy, amber highlights, wood lane. */
 
 /* Inter (SIL Open Font License, see fonts/OFL.txt), used by the minimal theme. */
 @font-face {

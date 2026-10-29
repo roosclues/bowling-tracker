@@ -4,6 +4,14 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261029-1523',
+    title: 'Minimal is now the main theme',
+    items: [
+      'Minimal is first in Settings → Theme and is the look the app starts with. Midnight lanes is still there if you want it.',
+      'The "App updated" message now stays until you close it with ×, like the other messages.',
+    ],
+  },
+  {
     version: 'v20261029-1322',
     title: 'See your progress, and a Minimal theme',
     items: [

@@ -48,7 +48,7 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 
 | Path | What it does |
 |---|---|
-| `index.html`, `css/styles.css` | App shell and styles: two themes (Midnight lanes, Minimal), each light and dark |
+| `index.html`, `css/styles.css` | App shell and styles: two themes (Minimal, the default, and Midnight lanes), each light and dark |
 | `fonts/` | Inter font for the Minimal theme (SIL Open Font License, `fonts/OFL.txt`) |
 | `js/app.js` | Router, bottom tabs, theme, glossary pop-ups, messages |
 | `js/scoring.js` | Bowling score rules, split detection |

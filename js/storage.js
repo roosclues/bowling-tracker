@@ -3,7 +3,7 @@
 // db = {
 //   version: 1,
 //   settings: { hand: 'R'|'L', last: {center, ball, oil}, sessionsSinceBackup, lastBackup, keepAwake, haptics,
-//               skin: 'classic'|'minimal', seenVersion },
+//               skin: 'minimal'|'classic', seenVersion },
 //   sessions: [{ id, date, center, lane, ball, oil, notes,
 //                games: [{ id, frames: [[shot, ...] x10], done, score }] }]
 // }
