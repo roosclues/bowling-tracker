@@ -1,7 +1,7 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
 // welcome, summary300, pins, game, summary, home, stats, help, lanetop, lanebottom,
-// changelog, settings, about, lefty.
+// changelog, settings, about, lefty, progress, minsettings, minhome, minstats, mingame, minhelp.
 
 const STOP = new URLSearchParams(location.search).get('stop');
 const frame = document.getElementById('app');
@@ -107,6 +107,11 @@ async function run() {
   await tapLane('target', 10);
   check('feet tap sets center dot', laneVal('feet') === 'Board 20 · center dot', laneVal('feet'));
   check('target tap sets 2nd arrow', laneVal('target') === 'Board 10 · 2nd arrow', laneVal('target'));
+  {
+    const cx = [...D.querySelectorAll('#lane .dot')].map((c) => Number(c.getAttribute('cx'))).sort((a, b) => a - b);
+    const want = [35, 30, 25, 20, 15, 10, 5].map((b) => 16 + (39 - b) * 10 + 5);
+    check('approach dots on boards 5, 10, ... 35', JSON.stringify(cx) === JSON.stringify(want), JSON.stringify(cx));
+  }
   check('save label says strike with no pins tapped', text('#saveBtn').includes('Strike'), text('#saveBtn'));
   for (let i = 0; i < 12; i++) await click('#saveBtn');
   await sleep(100);
@@ -232,6 +237,13 @@ async function run() {
   check('date filter keeps today\'s games', text('.tiles .tile:first-child .tv') === '263');
   $('#fDays').value = '0';
   $('#fDays').dispatchEvent(new W.Event('change'));
+  await sleep(50);
+  check('progress waits for 4 games', text('#progress').includes('at least 4 games'), text('#progress'));
+  check('personal bests: 300 and 12 strikes in a row', text('#bests').includes('300') && /Strikes in a row\s*12/.test(text('#bests')), text('#bests'));
+  await click('[data-by="session"]');
+  check('per-session trend needs 2 sessions', text('.trend-by + .hint').includes('2 sessions'), text('.trend-by + .hint'));
+  await click('[data-by="game"]');
+  check('per-game trend chart is back', !!$('#trend svg .c-line'));
   stopAt('stats');
 
   // ---- Glossary pop-up & help ----
@@ -285,6 +297,10 @@ async function run() {
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
   stopAt('settings');
+  await sleep(3500);
+  check('messages stay until dismissed', $('#toast').classList.contains('show') && text('#toast .toast-msg') === 'Left-handed lane view', text('#toast .toast-msg'));
+  await click('#toast .toast-x');
+  check('the × button dismisses the message', !$('#toast').classList.contains('show'));
   W.scrollTo(0, D.body.scrollHeight);
   stopAt('about');
   await nav(`#/session/${sid}`);
@@ -319,6 +335,82 @@ async function run() {
   storage.undoRestore();
   await sleep(150);
   check('undo restore brings the games back', text('.li-scores').includes('300'), text('.li-scores'));
+
+  // ---- Progress over many sessions (made-up games that slowly get better) ----
+  storage.restoreBackup(JSON.stringify({ settings: { seenVersion: SW_VERSION }, sessions: fakeSessions() }));
+  await nav('#/stats');
+  check('progress table compares first and last 9 of 18 games', D.querySelectorAll('#progress .tbl tbody tr').length >= 6 && text('#progress .card-h small') === 'first 9 vs last 9 games', text('#progress .card-h small'));
+  check('progress says you are improving', text('#progress .verdict').startsWith("You're improving!"), text('#progress .verdict'));
+  await click('[data-by="session"]');
+  check('trend shows one point per session', $('[data-by="session"]').classList.contains('on') && text('#trend .c-val') === String(Math.round(db().sessions.at(-1).games.reduce((a, g) => a + g.score, 0) / 3)), text('#trend .c-val'));
+  stopAt('progress');
+  await nav('#/');
+  check('home shows the change in average', /^▲ \+\d+\s+average, last 9 games vs\. your first 9$/.test(text('.hero-trend')), text('.hero-trend'));
+
+  // ---- Minimal theme ----
+  const themeColor = () => D.querySelector('meta[name="theme-color"]').content;
+  await nav('#/settings');
+  await click('[data-skin="minimal"]');
+  await sleep(100);
+  check('minimal theme saved and applied', db().settings.skin === 'minimal' && D.documentElement.dataset.skin === 'minimal');
+  check('minimal theme uses the Inter font', W.getComputedStyle(D.body).fontFamily.startsWith('Inter'), W.getComputedStyle(D.body).fontFamily);
+  const page = W.getComputedStyle(D.documentElement).getPropertyValue('--page').trim();
+  check('status bar matches the page color', themeColor() === page && ['#ffffff', '#0b0b0c'].includes(page), `${themeColor()} vs ${page}`);
+  await D.fonts.ready;
+  check('Inter font file loads', D.fonts.check('16px Inter'));
+  stopAt('minsettings');
+  await nav('#/');
+  check('minimal hero has no dark background', W.getComputedStyle($('.hero')).backgroundImage === 'none');
+  check('minimal stat tiles are one column of rows', W.getComputedStyle($('.tiles')).gridTemplateColumns.split(' ').length === 1, W.getComputedStyle($('.tiles')).gridTemplateColumns);
+  stopAt('minhome');
+  await nav('#/stats');
+  stopAt('minstats');
+  await click('[data-by="game"]');
+  const msid = db().sessions.at(-1).id;
+  await nav(`#/session/${msid}`);
+  await click('[data-act="newgame"]');
+  await sleep(80);
+  await tapPins([7, 10]);
+  stopAt('mingame');
+  await nav('#/help');
+  W.scrollTo(0, $('#demoLane').getBoundingClientRect().top + W.scrollY - 70);
+  stopAt('minhelp');
+  await nav('#/settings');
+  await click('[data-skin="classic"]');
+  await sleep(100);
+  check('back to the classic theme', D.documentElement.dataset.skin === 'classic' && themeColor() === '#0b1222', themeColor());
+}
+
+// Six weekly sessions of three games, slowly improving: more strikes and spares each week.
+function fakeSessions() {
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const ALL = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+  const pick = (pins, n) => pins.slice().sort(() => rand() - 0.5).slice(0, n).sort((a, b) => a - b);
+  const leave = (skill) => pick(ALL, 1 + Math.floor(rand() * (rand() < skill ? 2 : 6)));
+  const second = (standing, skill) => (rand() < skill + 0.1 ? [] : pick(standing, 1 + Math.floor(rand() * standing.length)));
+  const ball = (standing, w) => ({ standing, feet: 20 - (w % 3), target: 10, hit: standing.length ? ['light', 'high', 'pocket'][Math.floor(rand() * 3)] : 'pocket' });
+  const sessions = [];
+  for (let w = 0; w < 6; w++) {
+    const skill = 0.2 + w * 0.09;
+    const date = new Date(2026, 8, 1 + w * 7);
+    const games = [];
+    for (let g = 0; g < 3; g++) {
+      const frames = [];
+      for (let f = 0; f < 9; f++) {
+        if (rand() < skill * 0.6) { frames.push([ball([], w)]); continue; }
+        const first = leave(skill);
+        frames.push([ball(first, w), ball(second(first, skill), w)]);
+      }
+      const first = leave(skill);
+      const next = second(first, skill);
+      frames.push(next.length ? [ball(first, w), ball(next, w)] : [ball(first, w), ball(next, w), ball(leave(skill), w)]);
+      games.push({ id: `w${w}g${g}`, frames });
+    }
+    const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    sessions.push({ id: `w${w}`, date: iso, center: 'Test Lanes', ball: 'House 12 lb', games });
+  }
+  return sessions;
 }
 
 run()

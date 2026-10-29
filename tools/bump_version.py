@@ -19,7 +19,7 @@ skip_changelog = "--no-changelog" in sys.argv[1:]
 text = SW.read_text(encoding="utf-8")
 listed = set(re.findall(r"^\s*'([^']+)',?$", text, re.M))
 on_disk = {"index.html", "manifest.webmanifest"}
-for pattern in ("css/*.css", "icons/*.png", "js/**/*.js"):
+for pattern in ("css/*.css", "fonts/*.woff2", "icons/*.png", "js/**/*.js"):
     on_disk |= {p.relative_to(ROOT).as_posix() for p in ROOT.glob(pattern)}
 
 missing = sorted(on_disk - listed)

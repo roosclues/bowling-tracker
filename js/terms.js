@@ -26,7 +26,7 @@ export const GLOSSARY = {
   },
   feet: {
     title: 'Feet position',
-    text: 'The board your sliding foot starts on (left foot for right-handers, right foot for lefties). Use the dots on the approach: the big center dot is board 20, and the other dots are on boards 3, 5, 8, 11 and 14 counting in from each edge (so 26, 29, 32, 35 and 37 on the far side).',
+    text: 'The board your sliding foot starts on (left foot for right-handers, right foot for lefties). Use the dots on the approach: they are on boards 5, 10, 15, 20, 25, 30 and 35, lined up with the arrows, and the big center dot is board 20. Feet between two dots? Count the boards from the nearest dot.',
   },
   arrows: {
     title: 'Arrows (target)',

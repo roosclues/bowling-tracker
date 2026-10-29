@@ -77,6 +77,7 @@ def run_browser(browser, url):
 
 
 def main():
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # results include ▲ and →
     browser = find_browser()
     server = start_server()
     base = f"http://127.0.0.1:{server.server_address[1]}"

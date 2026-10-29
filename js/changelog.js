@@ -4,6 +4,19 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261029-1322',
+    title: 'See your progress, and a Minimal theme',
+    items: [
+      'Stats → "Are you improving?" compares your first games with your latest ones: average, 1st-ball pins, strikes, spares, 1-pin spares, open frames and pocket hits, each marked Better, Worse or Same.',
+      'New Personal bests: high game, best session average, most strikes, strikes in a row and fewest open frames, with the date you set each one.',
+      'The score chart can show each session\'s average (smoother than single games) or every game.',
+      'Home shows how your average has changed, and the game summary says when you bowl a new high game.',
+      'New theme in Settings → Theme: Minimal, with plain colors, the Inter font, and numbers in simple rows.',
+      'Messages at the bottom of the screen now stay until you close them with ×.',
+      'Approach dots on the lane pictures are now on boards 5, 10, 15, 20, 25, 30 and 35.',
+    ],
+  },
+  {
     version: 'v20261029-0710',
     title: 'Realistic lane guide and update history',
     items: [

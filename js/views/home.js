@@ -1,7 +1,7 @@
 // Home: continue/start bowling, headline stats, session history.
 
 import { db, currentGame } from '../storage.js';
-import { computeStats } from '../stats.js';
+import { computeStats, progress } from '../stats.js';
 import { sparkline } from '../charts.js';
 import { icon } from '../ui.js';
 import { APP_VERSION } from '../version.js';
@@ -32,6 +32,8 @@ export function render(root) {
   const recentAvg = recent.length ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : null;
   const sessions = db.sessions.slice().reverse();
   const needBackup = (db.settings.sessionsSinceBackup || 0) >= 5;
+  const prog = progress(db.sessions);
+  const change = prog && Math.round(prog.last.average) - Math.round(prog.first.average);
   const whatsNew = db.settings.seenVersion !== APP_VERSION && CHANGELOG.find((r) => r.version === APP_VERSION);
 
   const ctas = `
@@ -69,6 +71,11 @@ export function render(root) {
               <div><dt>Games</dt><dd>${all.games.length}</dd></div>
             </dl>
           </div>
+          ${prog ? `
+            <a class="hero-trend" href="#/stats">
+              <b class="${change > 0 ? 'up' : change < 0 ? 'down' : ''}">${change > 0 ? `▲ +${change}` : change < 0 ? `▼ ${change}` : '= same'}</b>
+              average, last ${prog.k} games vs. your first ${prog.k}
+            </a>` : ''}
           ${sparkline(recent)}
           ${ctas}
         </section>

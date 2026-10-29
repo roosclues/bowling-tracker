@@ -50,12 +50,17 @@ export function render(root, sid, gid) {
   const st = computeStats([{ ...session, games: [game] }]);
   const gameNo = session.games.indexOf(game) + 1;
   const hints = tips(st, db.settings.hand);
+  // A record when it was bowled: higher than every finished game before it.
+  const allGames = computeStats(db.sessions).games.map((x) => x.game);
+  const earlier = allGames.slice(0, allGames.indexOf(game));
+  const newHigh = earlier.length > 0 && game.score > Math.max(...earlier.map((g) => g.score));
 
   root.innerHTML = `
     ${topbar({ back: `#/session/${sid}`, title: `Game ${gameNo} summary`, sub: esc(session.center || '') })}
     <div class="page">
       <section class="hero final">
         <div class="hero-label">Final score</div>
+        ${newHigh ? '<div class="pill new-high">New high game!</div>' : ''}
         <div class="final-score">${game.score}</div>
         <div class="sb-wrap">${scoreboardHTML(game.frames)}</div>
       </section>

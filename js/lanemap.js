@@ -58,9 +58,9 @@ function staticSVG(hand) {
   return `
     <defs>
       <linearGradient id="lmOil" x1="0" y1="1" x2="0" y2="0">
-        <stop offset="0" stop-color="#fff" stop-opacity="0.26"/>
-        <stop offset="0.85" stop-color="#fff" stop-opacity="0.12"/>
-        <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+        <stop offset="0" class="oil-stop" stop-opacity="0.26"/>
+        <stop offset="0.85" class="oil-stop" stop-opacity="0.12"/>
+        <stop offset="1" class="oil-stop" stop-opacity="0"/>
       </linearGradient>
     </defs>
     <rect x="0" y="0" width="${W}" height="${PIT}" class="lm-pit"/>

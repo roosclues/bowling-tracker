@@ -1,5 +1,6 @@
 import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/scoring.js';
 import { normalizeDB } from '../js/normalize.js';
+import { computeStats, progress, personalBests, sessionAverages } from '../js/stats.js';
 
 // Build frames from a list of pin counts, e.g. [10, 7, 3, ...].
 function game(rolls) {
@@ -152,6 +153,55 @@ test('restore ignores balls after an unfinished frame', () => {
   const frames = [[{ standing: [10] }], [{ standing: [] }]];
   const g = normalizeDB({ sessions: [{ id: 'a', games: [{ id: 'g', frames }] }] }).sessions[0].games[0];
   eq(g.frames[1].length, 0);
+});
+
+test('restore keeps a known theme and resets an unknown one', () => {
+  eq(normalizeDB({ sessions: [], settings: { skin: 'minimal' } }).settings.skin, 'minimal');
+  eq(normalizeDB({ sessions: [], settings: { skin: '<b>' } }).settings.skin, 'classic');
+  eq(normalizeDB({ sessions: [] }).settings.skin, 'classic');
+});
+
+// A session on `date` with one finished game per list of rolls.
+function session(date, ...rollLists) {
+  return normalizeDB({
+    sessions: [{ id: date.replace(/-/g, ''), date, games: rollLists.map((r, i) => ({ id: `g${i}`, frames: game(r) })) }],
+  }).sessions[0];
+}
+const OPEN_90 = Array(10).fill([9, 0]).flat();
+const SPARES_190 = [...Array(10).fill([9, 1]).flat(), 9];
+const TURKEY_141 = [10, 10, 10, ...Array(7).fill([9, 0]).flat()];
+
+test('progress waits for 4 finished games', () => {
+  eq(progress([session('2026-10-01', OPEN_90, OPEN_90, OPEN_90)]), null);
+});
+
+test('progress compares the first and last games', () => {
+  const p = progress([session('2026-10-01', OPEN_90, OPEN_90), session('2026-10-08', SPARES_190, SPARES_190)]);
+  eq([p.k, p.first.average, p.last.average, p.first.opens, p.last.opens], [2, 90, 190, 20, 0]);
+  eq([p.first.sparesMade, p.last.sparesMade, p.last.spareChances], [0, 20, 20]);
+});
+
+test('progress uses at most 10 games a side', () => {
+  const many = Array.from({ length: 25 }, () => OPEN_90);
+  eq(progress([session('2026-10-01', ...many)]).k, 10);
+});
+
+test('personal bests and where they were set', () => {
+  const st = computeStats([
+    session('2026-10-01', OPEN_90, OPEN_90),
+    session('2026-10-08', TURKEY_141),
+    session('2026-10-15', SPARES_190, TURKEY_141),
+  ]);
+  const b = personalBests(st);
+  eq([b.high.score, b.high.session.date], [190, '2026-10-15']);
+  eq([b.strikes.strikes, b.strikes.session.date, b.streak.streak], [3, '2026-10-08', 3]);
+  eq([b.fewestOpens.opens, b.fewestOpens.session.date], [0, '2026-10-15']);
+  eq([b.session.average, b.session.games, b.session.session.date], [165.5, 2, '2026-10-15']);
+  eq(sessionAverages(st).map((x) => [x.average, x.games]), [[90, 2], [141, 1], [165.5, 2]]);
+});
+
+test('a perfect game is 12 strikes in a row', () => {
+  eq(personalBests(computeStats([session('2026-10-01', Array(12).fill(10))])).streak.streak, 12);
 });
 
 const failed = results.filter((r) => !r.ok);

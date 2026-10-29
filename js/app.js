@@ -1,9 +1,9 @@
-// Hash router, bottom tabs, glossary pop-ups, and service worker registration.
+// Hash router, bottom tabs, theme, glossary pop-ups, messages, and service worker registration.
 
 import { db, save, currentGame, onExternalChange, loadProblem } from './storage.js';
 import { APP_VERSION } from './version.js';
 import { GLOSSARY } from './terms.js';
-import { go, toast, esc } from './util.js';
+import { go, toast, dismissToast, esc } from './util.js';
 import { icon } from './ui.js';
 import { keepAwake } from './device.js';
 import * as home from './views/home.js';
@@ -16,6 +16,15 @@ import * as help from './views/help.js';
 import * as changelog from './views/changelog.js';
 
 const root = document.getElementById('view');
+
+// Theme (Settings → Theme) lives on <html> so the CSS can switch colors, fonts and layout.
+// The phone's status bar takes the top bar's color.
+const themeMeta = document.querySelector('meta[name="theme-color"]');
+function applySkin() {
+  document.documentElement.dataset.skin = db.settings.skin;
+  themeMeta.content = getComputedStyle(document.documentElement).getPropertyValue('--bar').trim() || '#0b1222';
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applySkin);
 
 const TABS = [
   ['home', '#/', 'home', 'Home'],
@@ -56,6 +65,7 @@ function route() {
     else a.removeAttribute('aria-current');
   });
   document.body.classList.toggle('has-actionbar', false);
+  applySkin();
   try {
     fn(root, ...(hash.match(re)?.slice(1) ?? []));
   } catch (e) {
@@ -87,6 +97,9 @@ route();
 if (loadProblem) {
   alert(`Your saved data could not be read (${loadProblem.message}). A copy was kept on this phone. You can restore a backup from Settings.`);
 }
+
+// Messages stay until they're dismissed.
+document.querySelector('#toast .toast-x').addEventListener('click', dismissToast);
 
 // Glossary pop-up for every (i) button.
 const dialog = document.getElementById('infoDialog');

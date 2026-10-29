@@ -48,12 +48,13 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 
 | Path | What it does |
 |---|---|
-| `index.html`, `css/styles.css` | App shell and styles (light/dark) |
-| `js/app.js` | Router, bottom tabs, glossary pop-ups |
+| `index.html`, `css/styles.css` | App shell and styles: two themes (Midnight lanes, Minimal), each light and dark |
+| `fonts/` | Inter font for the Minimal theme (SIL Open Font License, `fonts/OFL.txt`) |
+| `js/app.js` | Router, bottom tabs, theme, glossary pop-ups, messages |
 | `js/scoring.js` | Bowling score rules, split detection |
 | `js/storage.js` | Saving, backup/restore, CSV export, sync between open copies |
 | `js/normalize.js` | Checks and repairs saved or restored data |
-| `js/stats.js` | Stat calculations and coaching tips |
+| `js/stats.js` | Stat calculations, progress (first vs latest games), personal bests, coaching tips |
 | `js/lane.js`, `js/pins.js` | Tappable lane and pin-deck pickers |
 | `js/lanemap.js` | To-scale lane on the Help screen |
 | `js/changelog.js`, `js/version.js` | Update history and the current version (shown in Settings) |

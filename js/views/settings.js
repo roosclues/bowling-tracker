@@ -1,4 +1,4 @@
-// Settings: handedness, backup/restore, CSV export, storage info.
+// Settings: handedness, theme, backup/restore, CSV export, storage info.
 
 import {
   db, save, downloadBackup, restoreBackup, canUndoRestore, undoRestore, exportCSV, canShareFiles, wipeAll, requestPersist,
@@ -56,6 +56,15 @@ export function render(root) {
       </section>
 
       <section class="card">
+        <h3>Theme</h3>
+        <p class="hint">Midnight lanes has a dark top bar, a wood lane and an alley-style scoreboard. Minimal uses plain colors, a clean font, and shows numbers in simple rows. Both follow your phone's light or dark mode.</p>
+        <div class="seg full">
+          ${[['classic', 'Midnight lanes'], ['minimal', 'Minimal']].map(([key, label]) =>
+            `<button type="button" class="chip${db.settings.skin === key ? ' on' : ''}" data-skin="${key}">${label}</button>`).join('')}
+        </div>
+      </section>
+
+      <section class="card">
         <h3>At the lanes</h3>
         ${toggle('keepAwake', 'Keep screen on while bowling', 'Stops the phone from sleeping between shots.')}
         ${toggle('haptics', 'Vibrate on taps', 'A small buzz when you tap pins or save a ball.')}
@@ -107,6 +116,12 @@ export function render(root) {
   root.onclick = async (e) => {
     const btn = e.target.closest('button');
     if (!btn) return;
+    if (btn.dataset.skin) {
+      db.settings.skin = btn.dataset.skin;
+      save();
+      go('#/settings'); // re-route so the new theme applies everywhere
+      return;
+    }
     if (btn.dataset.hand) {
       db.settings.hand = btn.dataset.hand;
       save();

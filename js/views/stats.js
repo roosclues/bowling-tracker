@@ -1,15 +1,107 @@
-// Stats: trends, strike/spare rates, best feet + arrow lines, leaves, pin hits.
+// Stats: progress over time, personal bests, trends, strike/spare rates, best feet + arrow
+// lines, leaves, pin hits.
 
 import { db } from '../storage.js';
-import { computeStats, filterSessions, tips } from '../stats.js';
+import { computeStats, filterSessions, tips, progress, personalBests, sessionAverages } from '../stats.js';
 import { lineChart, barList } from '../charts.js';
 import { miniPins } from '../pins.js';
 import { HITS, infoButton, arrowLabel } from '../terms.js';
 import { topbar } from '../ui.js';
-import { esc, fmtPct, fmtDate, pct } from '../util.js';
+import { esc, fmtPct, fmtDate, fmtShortDate, pct } from '../util.js';
 
 const filters = { days: 0, center: '', ball: '' };
 const MIN_COMBO = 3;
+let trendBy = null; // 'session' or 'game'; picked automatically until you choose
+
+const hitCount = (s) => Object.values(s.hits).reduce((a, b) => a + b, 0);
+
+// Rows of "Are you improving?": how to read each number, and whether higher is better.
+const METRICS = [
+  { label: 'Average score', get: (s) => s.average, fmt: (v) => Math.round(v), up: true },
+  { label: '1st-ball pins', get: (s) => s.firstBallAvg, fmt: (v) => v.toFixed(1), up: true },
+  { label: 'Strikes', get: (s) => pct(s.strikes, s.firstBalls), fmt: (v) => `${v}%`, up: true },
+  { label: 'Spares made', get: (s) => pct(s.sparesMade, s.spareChances), fmt: (v) => `${v}%`, up: true },
+  { label: '1-pin spares', get: (s) => pct(s.singleMade, s.singleChances), fmt: (v) => `${v}%`, up: true },
+  { label: 'Open frames a game', get: (s) => s.opens / s.games.length, fmt: (v) => v.toFixed(1), up: false },
+  { label: 'Pocket hits', get: (s) => (hitCount(s) >= 3 ? pct(s.hits.pocket ?? 0, hitCount(s)) : null), fmt: (v) => `${v}%`, up: true },
+];
+const STATE_WORD = { better: 'Better', worse: 'Worse', same: 'Same' };
+
+function progressRows(p) {
+  return METRICS.map((m) => {
+    const a = m.get(p.first);
+    const b = m.get(p.last);
+    if (a == null || b == null) return null;
+    const from = String(m.fmt(a));
+    const to = String(m.fmt(b));
+    const state = from === to ? 'same' : (b > a) === m.up ? 'better' : 'worse';
+    return { label: m.label, from, to, state, mark: from === to ? '=' : b > a ? '▲' : '▼' };
+  }).filter(Boolean);
+}
+
+function verdict(rows) {
+  const [avgRow, ...rest] = rows;
+  const d = Number(avgRow.to) - Number(avgRow.from);
+  const gains = rest.filter((r) => r.state === 'better').slice(0, 2)
+    .map((r) => `${r.label.toLowerCase()} (${r.from} → ${r.to})`);
+  let text;
+  if (d >= 5) text = `<strong>You're improving!</strong> Your average went from ${avgRow.from} to ${avgRow.to} (+${d} pins).`;
+  else if (d <= -5) text = `<strong>Your average dipped</strong> from ${avgRow.from} to ${avgRow.to}. Every bowler has ups and downs; the rows below show what changed.`;
+  else text = `<strong>Your average is steady</strong> (${avgRow.from} → ${avgRow.to}).`;
+  if (gains.length) text += ` Getting better: ${gains.join(' and ')}.`;
+  return text;
+}
+
+function progressCard(p, games) {
+  if (!p) {
+    return `
+      <section class="card" id="progress">
+        <div class="card-h"><h3>Are you improving?</h3></div>
+        <p class="hint">Bowl at least 4 games and this compares your first games with your latest ones. You have ${games} so far.</p>
+      </section>`;
+  }
+  const rows = progressRows(p);
+  return `
+    <section class="card" id="progress">
+      <div class="card-h"><h3>Are you improving?</h3><small>first ${p.k} vs last ${p.k} games</small></div>
+      <p class="verdict">${verdict(rows)}</p>
+      <table class="tbl progress">
+        <thead><tr><th></th><th class="num">First ${p.k}</th><th class="num">Last ${p.k}</th><th class="num">Change</th></tr></thead>
+        <tbody>${rows.map((r) => `
+          <tr>
+            <td>${r.label}</td>
+            <td class="num">${r.from}</td>
+            <td class="num"><strong>${r.to}</strong></td>
+            <td class="num trend ${r.state}">${r.mark} ${STATE_WORD[r.state]}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+      <p class="hint">Spares made and open frames are usually where a new bowler's score goes up fastest. Numbers jump around over a few games, so the more you log, the more you can trust this.</p>
+    </section>`;
+}
+
+const STREAK_NAMES = { 2: 'a double', 3: 'a turkey', 12: 'a perfect game!' };
+
+function bestsCard(b) {
+  if (!b) return '';
+  const row = (label, value, entry, note = '') => `
+    <li>
+      <span class="kv-label">${label}</span>
+      <span class="kv-val"><strong>${value}</strong>${note ? ` <span class="kv-note">${note}</span>` : ''}</span>
+      <span class="kv-date">${fmtShortDate(entry.session.date)}</span>
+    </li>`;
+  const streak = b.streak.streak;
+  return `
+    <section class="card" id="bests">
+      <div class="card-h"><h3>Personal bests</h3><small>date first set</small></div>
+      <ul class="kv">
+        ${row('High game', b.high.score, b.high)}
+        ${b.session ? row('Best session average', Math.round(b.session.average), b.session, `${b.session.games} games`) : ''}
+        ${row('Most strikes in a game', b.strikes.strikes, b.strikes)}
+        ${streak ? row('Strikes in a row', streak, b.streak, STREAK_NAMES[streak] ?? (streak >= 4 ? `a ${streak}-bagger` : '')) : ''}
+        ${row('Fewest open frames', b.fewestOpens.opens, b.fewestOpens, b.fewestOpens.opens === 0 ? 'a clean game!' : '')}
+      </ul>
+    </section>`;
+}
 
 function options(values, selected, allLabel) {
   return `<option value="">${allLabel}</option>` +
@@ -22,8 +114,14 @@ export function render(root) {
   // A filter can point at a center or ball that was renamed or restored away; drop it.
   if (!centers.includes(filters.center)) filters.center = '';
   if (!balls.includes(filters.ball)) filters.ball = '';
-  const st = computeStats(filterSessions(db.sessions, filters));
+  const sessions = filterSessions(db.sessions, filters);
+  const st = computeStats(sessions);
   const hints = tips(st, db.settings.hand);
+  const perSession = sessionAverages(st);
+  const by = trendBy ?? (perSession.length >= 2 ? 'session' : 'game');
+  const trendPoints = by === 'session'
+    ? perSession.map((x) => ({ value: Math.round(x.average), label: `${fmtDate(x.session.date)} · ${x.games} game${x.games === 1 ? '' : 's'}` }))
+    : st.games.map((g) => ({ value: g.game.score, label: `${fmtDate(g.session.date)} · game ${g.number}` }));
 
   const ranked = st.combos.filter((c) => c.n >= MIN_COMBO);
   const hitTotal = Object.values(st.hits).reduce((a, b) => a + b, 0);
@@ -60,17 +158,29 @@ export function render(root) {
       </div>
       ${st.speedCount ? `<p class="meta center">Average ball speed ${st.speedAvg.toFixed(1)} mph over ${st.speedCount} ball${st.speedCount === 1 ? "" : "s"}</p>` : ''}
 
+      ${progressCard(progress(sessions), st.games.length)}
+      ${bestsCard(personalBests(st))}
+
       ${hints.map((t) => `<div class="tip"><strong>${t.title}</strong><p>${t.text}</p></div>`).join('')}
 
       <section class="card">
-        <div class="card-h"><h3>Score by game</h3><small>Tap the chart for details</small></div>
-        ${st.games.length >= 2 ? '<div id="trend"></div>' : '<p class="hint">Bowl at least 2 games to see a trend.</p>'}
+        <div class="card-h"><h3>${by === 'session' ? 'Average by session' : 'Score by game'}</h3><small>Tap the chart for details</small></div>
+        <div class="seg full trend-by">
+          <button type="button" class="chip${by === 'session' ? ' on' : ''}" data-by="session">Each session</button>
+          <button type="button" class="chip${by === 'game' ? ' on' : ''}" data-by="game">Each game</button>
+        </div>
+        ${trendPoints.length >= 2 ? '<div id="trend"></div>' : `<p class="hint">Bowl at least 2 ${by === 'session' ? 'sessions' : 'games'} to see a trend.</p>`}
         <details class="table-view">
           <summary>Show as table</summary>
+          ${by === 'session' ? `
+          <table class="tbl">
+            <thead><tr><th>Date</th><th class="num">Games</th><th class="num">Average</th></tr></thead>
+            <tbody>${perSession.slice().reverse().map((x) => `<tr><td>${fmtDate(x.session.date)}</td><td class="num">${x.games}</td><td class="num">${Math.round(x.average)}</td></tr>`).join('')}</tbody>
+          </table>` : `
           <table class="tbl">
             <thead><tr><th>Date</th><th>Game</th><th class="num">Score</th></tr></thead>
             <tbody>${st.games.slice().reverse().map((g) => `<tr><td>${fmtDate(g.session.date)}</td><td>${g.number}</td><td class="num">${g.game.score}</td></tr>`).join('')}</tbody>
-          </table>
+          </table>`}
         </details>
       </section>
 
@@ -122,11 +232,12 @@ export function render(root) {
       `}
     </div>`;
 
-  if (st.games.length >= 2) {
-    lineChart(root.querySelector('#trend'),
-      st.games.map((g) => ({ value: g.game.score, label: `${fmtDate(g.session.date)} · game ${g.number}` })),
-      { refValue: Math.round(st.average), refLabel: 'avg' });
+  if (trendPoints.length >= 2) {
+    lineChart(root.querySelector('#trend'), trendPoints, { refValue: Math.round(st.average), refLabel: 'avg' });
   }
+  root.querySelectorAll('[data-by]').forEach((btn) => {
+    btn.onclick = () => { trendBy = btn.dataset.by; render(root); };
+  });
 
   root.querySelector('#fDays').onchange = (e) => { filters.days = Number(e.target.value); render(root); };
   root.querySelector('#fCenter').onchange = (e) => { filters.center = e.target.value; render(root); };

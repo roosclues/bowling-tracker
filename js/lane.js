@@ -9,7 +9,7 @@ export const BOARD = 10;
 export const GUTTER = 16;
 export const W = GUTTER * 2 + BOARD * 39;
 export const ARROWS = [5, 10, 15, 20, 25, 30, 35];
-export const DOTS = [3, 5, 8, 11, 14, 20, 26, 29, 32, 35, 37];
+export const DOTS = [5, 10, 15, 20, 25, 30, 35];
 export const POCKET_BOARD = 17.5;
 
 const FOUL_Y = 172;

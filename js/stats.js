@@ -127,6 +127,62 @@ export function computeStats(sessions) {
   };
 }
 
+// Your earliest finished games vs. your most recent ones: the same number of each (up to
+// `maxGames`), so the two sides are fair to compare. Null until there are 4 finished games.
+export function progress(sessions, maxGames = 10) {
+  const { games } = computeStats(sessions);
+  const k = Math.min(maxGames, Math.floor(games.length / 2));
+  if (k < 2) return null;
+  const statsOf = (list) => computeStats(list.map(({ session, game }) => ({ ...session, games: [game] })));
+  return { k, total: games.length, first: statsOf(games.slice(0, k)), last: statsOf(games.slice(-k)) };
+}
+
+// One point per session: the average of its finished games, in date order.
+export function sessionAverages(stats) {
+  const bySession = new Map();
+  for (const { session, game } of stats.games) {
+    if (!bySession.has(session)) bySession.set(session, []);
+    bySession.get(session).push(game.score);
+  }
+  return [...bySession].map(([session, scores]) => ({ session, games: scores.length, average: avg(scores) }));
+}
+
+// Strikes, longest run of strikes, and open frames in one finished game.
+function gameMarks(game) {
+  let strikes = 0;
+  let run = 0;
+  let streak = 0;
+  let opens = 0;
+  game.frames.forEach((shots) => {
+    shots.forEach((shot, i) => {
+      if (!isFreshRack(shots, i)) return;
+      if (shot.standing.length === 0) {
+        strikes++;
+        streak = Math.max(streak, ++run);
+      } else {
+        run = 0;
+      }
+    });
+    if (shots[0].standing.length > 0 && shots[1]?.standing.length !== 0) opens++;
+  });
+  return { strikes, streak, opens };
+}
+
+// Personal records, each with the game (and so the date) where it was first set.
+export function personalBests(stats) {
+  if (!stats.games.length) return null;
+  const games = stats.games.map((g) => ({ ...g, score: g.game.score, ...gameMarks(g.game) }));
+  const best = (key, better = (a, b) => b > a) => games.reduce((a, b) => (better(a[key], b[key]) ? b : a));
+  const sessions = sessionAverages(stats).filter((x) => x.games >= 2);
+  return {
+    high: best('score'),
+    strikes: best('strikes'),
+    streak: best('streak'),
+    fewestOpens: best('opens', (a, b) => b < a),
+    session: sessions.length ? sessions.reduce((a, b) => (b.average > a.average ? b : a)) : null,
+  };
+}
+
 // Simple coaching hints from the data. Returns a list of { title, text }.
 export function tips(stats, hand) {
   const out = [];

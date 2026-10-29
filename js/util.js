@@ -24,6 +24,14 @@ export function fmtDate(iso) {
   });
 }
 
+// 'Oct 29', plus the year when it isn't this year.
+export function fmtShortDate(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    month: 'short', day: 'numeric', ...(y === new Date().getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
 // { day: '28', month: 'Oct', weekday: 'Tue' } for date badges.
 export function dateParts(iso) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -48,13 +56,15 @@ export function avg(values) {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
 
-let toastTimer;
+// Shows a message that stays until it's dismissed with its × button (or replaced by a newer one).
 export function toast(message) {
   const el = document.getElementById('toast');
-  el.textContent = message;
+  el.querySelector('.toast-msg').textContent = message;
   el.classList.add('show');
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
+export function dismissToast() {
+  document.getElementById('toast').classList.remove('show');
 }
 
 // Navigate. Use { replace: true } for redirects so the phone's Back button skips them

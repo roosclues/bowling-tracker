@@ -9,6 +9,8 @@ import { uid, todayISO } from './util.js';
 const ID = /^\w{1,40}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HIT_KEYS = new Set(HITS.map((h) => h.key));
+// App themes; the first is the default.
+export const SKINS = ['classic', 'minimal'];
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
@@ -91,6 +93,7 @@ export function normalizeDB(data) {
       lastBackup: date(s.lastBackup),
       keepAwake: s.keepAwake !== false,
       haptics: s.haptics !== false,
+      skin: SKINS.includes(s.skin) ? s.skin : SKINS[0],
       seenVersion: typeof s.seenVersion === 'string' && /^v[\w-]{1,30}$/.test(s.seenVersion) ? s.seenVersion : null,
     },
     sessions: data.sessions.map((x) => normSession(x, seen)).sort((a, b) => a.date.localeCompare(b.date)),
