@@ -44,6 +44,8 @@ const routes = [
   [/^#\/session\/(\w+)$/, session.renderDetail, 'home'],
   [/^#\/session\/(\w+)\/edit$/, session.renderForm, 'home'],
   [/^#\/game\/(\w+)\/(\w+)$/, game.render, 'bowl'],
+  [/^#\/edit\/(\w+)\/(\w+)\/(\d)\/(\d)$/, game.renderEdit, 'bowl'],
+  [/^#\/review\/(\w+)\/(\w+)$/, game.renderReview, 'bowl'],
   [/^#\/summary\/(\w+)\/(\w+)$/, summary.render, 'bowl'],
   [/^#\/stats$/, stats.render, 'stats'],
   [/^#\/settings$/, settings.render, 'settings'],

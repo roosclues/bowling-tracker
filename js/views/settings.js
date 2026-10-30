@@ -1,11 +1,11 @@
-// Settings: handedness, theme, backup/restore, CSV export, storage info.
+// Settings: handedness, speed unit, theme, backup/restore, CSV export, storage info.
 
 import {
   db, save, downloadBackup, restoreBackup, canUndoRestore, undoRestore, exportCSV, canShareFiles, wipeAll, requestPersist,
 } from '../storage.js';
 import { topbar, icon } from '../ui.js';
 import { APP_VERSION, versionDate } from '../version.js';
-import { fmtDate, toast, go, plural } from '../util.js';
+import { fmtDate, toast, go, plural, SPEED_UNITS } from '../util.js';
 
 // Ask the service worker to look for a newer version now. If one exists it downloads in the
 // background, and app.js shows "App updated" once it's ready.
@@ -52,6 +52,15 @@ export function render(root) {
         <div class="seg full">
           <button type="button" class="chip${db.settings.hand === 'R' ? ' on' : ''}" data-hand="R">Right-handed</button>
           <button type="button" class="chip${db.settings.hand === 'L' ? ' on' : ''}" data-hand="L">Left-handed</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Ball speed</h3>
+        <p class="hint">Pick the unit your lane screen shows. Speeds you already logged are converted.</p>
+        <div class="seg full">
+          ${[['kph', 'km/h'], ['mph', 'mph']].map(([key, label]) =>
+            `<button type="button" class="chip${db.settings.speedUnit === key ? ' on' : ''}" data-speed-unit="${key}">${label}</button>`).join('')}
         </div>
       </section>
 
@@ -128,6 +137,13 @@ export function render(root) {
       save();
       render(root);
       toast(btn.dataset.hand === 'L' ? 'Left-handed lane view' : 'Right-handed lane view');
+      return;
+    }
+    if (btn.dataset.speedUnit) {
+      db.settings.speedUnit = btn.dataset.speedUnit;
+      save();
+      render(root);
+      toast(`Ball speed in ${SPEED_UNITS[btn.dataset.speedUnit]}`);
       return;
     }
     switch (btn.dataset.act) {

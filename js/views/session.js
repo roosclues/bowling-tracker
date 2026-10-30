@@ -1,7 +1,7 @@
-// Session setup form and session detail (games, how the session went, tips).
+// Session setup form and session detail (games, how the session went, tips, feet moves).
 
 import { db, save, findSession, newGame, requestPersist, unstampGoals } from '../storage.js';
-import { computeStats, tips, seriesOf } from '../stats.js';
+import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN } from '../stats.js';
 import { infoButton } from '../terms.js';
 import { topbar, icon, tipsHTML } from '../ui.js';
 import { esc, uid, todayISO, fmtDate, go, toast, avg, fmtPct, plural } from '../util.js';
@@ -81,6 +81,35 @@ export function renderForm(root, sid) {
   });
 }
 
+// "3 strikes in 9 · 7.8 pins", plus pocket hits when enough were recorded.
+function runText(r) {
+  return [`${r.strikes} ${r.strikes === 1 ? 'strike' : 'strikes'} in ${r.n}`, `${r.pins.toFixed(1)} pins`,
+    r.hitN >= MOVE_MIN && `${r.pocket}/${r.hitN} pocket`].filter(Boolean).join(' · ');
+}
+
+// Feet moves during the session and how the first balls went before and after each one.
+function movesCard(moves, hand) {
+  if (!moves.length) return '';
+  const side = (d) => ((d > 0) === (hand !== 'L') ? 'left' : 'right'); // boards count from the hand side
+  return `
+    <section class="card" id="moves">
+      <div class="card-h"><h3>Your moves</h3><small>1st balls</small></div>
+      <ul class="moves">${moves.map((m) => {
+        const d = m.to - m.from;
+        const { arrow: a } = m.before;
+        const { arrow: b } = m.after;
+        const arrow = a != null && b != null ? `, arrow ${a === b ? a : `${a} → ${b}`}` : '';
+        return `
+        <li>
+          <span class="move-title">Game ${m.gameNo} · frame ${m.frame + 1}: feet ${m.from} → ${m.to} (${plural(Math.abs(d), 'board')} ${side(d)})${arrow}</span>
+          <span class="sub">Before: ${runText(m.before)}</span>
+          <span class="sub">After: ${runText(m.after)}</span>
+        </li>`;
+      }).join('')}</ul>
+      <p class="hint">A move is a new feet board you kept for at least 2 balls; a one-off ball doesn't count. One session is a small sample, so look for the same pattern over a few sessions.</p>
+    </section>`;
+}
+
 export function renderDetail(root, sid) {
   const s = findSession(sid);
   if (!s) {
@@ -112,7 +141,8 @@ export function renderDetail(root, sid) {
       </div>
       <p class="meta">${[s.lane && `Lane ${esc(s.lane)}`, s.ball && esc(s.ball), s.oil && s.oil !== 'Unknown' && esc(s.oil)].filter(Boolean).join(' · ')}</p>
       ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ''}
-      ${tipsHTML(tips(st, db.settings.hand))}
+      ${tipsHTML(tips(st, db.settings.hand, null, db.settings.speedUnit))}
+      ${movesCard(sessionMoves(s), db.settings.hand)}
       ${s.center && done.length ? `<button type="button" class="link" data-act="stats" id="centerStats">See all your stats at ${esc(s.center)} →</button>` : ''}
       <ul class="list">
         ${s.games.map((g, i) => `

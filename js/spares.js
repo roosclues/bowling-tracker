@@ -6,7 +6,7 @@ import { PIN_POS } from './scoring.js';
 // Boards to move the feet for each key pin, for a right-hander. Boards are counted from the
 // hand side, so negative = toward the hand side. Left-handers use the mirror-image pin.
 const SHIFT = { 1: 0, 5: 0, 2: -3, 8: -3, 4: -6, 7: -9, 3: 4, 9: 4, 6: 8, 10: 12 };
-const MIRROR = { 1: 1, 2: 3, 3: 2, 4: 6, 5: 5, 6: 4, 7: 10, 8: 9, 9: 8, 10: 7 };
+export const MIRROR = { 1: 1, 2: 3, 3: 2, 4: 6, 5: 5, 6: 4, 7: 10, 8: 9, 9: 8, 10: 7 };
 
 export const DEFAULT_LINE = { feet: 20, target: 10 };
 

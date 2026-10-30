@@ -1,9 +1,9 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
 // welcome, summary300, pins, spareaim, game, summary, session, home, stats, statsfirst, statsspares, help,
-// lanetop, lanebottom, changelog, settings, about, lefty, progress, practice, goals, goalreached, minsettings, minhome,
-// minstats, mingame, minhelp.
-// Add &skin=classic to look at the Midnight lanes theme up to the "progress" step (a restore resets it).
+// lanetop, lanebottom, changelog, settings, about, lefty, adddetails, review, progress, practice, goals, goalreached, minsettings, minhome,
+// minstats, mingame, minhelp, calendar, carry, moves.
+// Add &scroll=<selector> to scroll a card into view there, and &skin=classic to look at the Midnight lanes theme up to the "progress" step (a restore resets it).
 
 const PARAMS = new URLSearchParams(location.search);
 const STOP = PARAMS.get('stop');
@@ -32,14 +32,19 @@ function check(name, cond, detail = '') {
   report();
 }
 function stopAt(step) {
-  if (STOP === step) throw new Stop();
+  if (STOP !== step) return;
+  // &scroll=<selector> brings a card below the fold into view for a screenshot.
+  const scroll = PARAMS.get('scroll');
+  if (scroll && $(scroll)) W.scrollTo(0, $(scroll).getBoundingClientRect().top + W.scrollY - 130); // clear the sticky bars
+  $('#toast .toast-x')?.click(); // so a message doesn't cover the card
+  throw new Stop();
 }
 async function click(sel) {
   const el = typeof sel === 'string' ? $(sel) : sel;
   if (!el) throw new Error('missing element ' + sel);
   el.dispatchEvent(new W.MouseEvent('click', { bubbles: true, cancelable: true }));
   // Save / Undo ignore a second tap within 350 ms (double-tap guard), so wait it out.
-  const guarded = el.matches('#saveBtn, [data-act="undo"], [data-act="saveEdit"], [data-act="made"], [data-act="miss"]');
+  const guarded = el.matches('#saveBtn, [data-act="undo"], [data-act="saveEdit"], [data-act="saveNext"], [data-act="made"], [data-act="miss"]');
   await sleep(guarded ? 400 : 60);
 }
 async function nav(hash) {
@@ -141,7 +146,8 @@ async function run() {
   await click('[data-hit="light"]');
   await click('[data-tag="Missed right"]');
   const speed = $('#speed');
-  speed.value = '15.5';
+  check('speed is asked in km/h by default', $('label[for="speed"]').textContent.includes('km/h'));
+  speed.value = '25';
   speed.dispatchEvent(new W.Event('input', { bubbles: true }));
   await tapPins([10]);
   check('save label counts pins', text('#saveBtn') === 'Save · 9 pins', text('#saveBtn'));
@@ -159,7 +165,7 @@ async function run() {
 
   // Frame 2 first ball: "Same as last ball" copies frame 1's breakpoint and speed.
   await click('[data-act="repeat"]');
-  check('"Same as last ball" copies breakpoint and speed', laneVal('breakpoint') === 'Board 6' && $('#speed').value === '15.5', `${laneVal('breakpoint')} ${$('#speed').value}`);
+  check('"Same as last ball" copies breakpoint and speed', laneVal('breakpoint') === 'Board 6' && $('#speed').value === '25', `${laneVal('breakpoint')} ${$('#speed').value}`);
 
   // Frame 2: 7-10 split, then miss both.
   await ball([7, 10]);
@@ -206,7 +212,7 @@ async function run() {
 
   const g2 = db().sessions[0].games[1];
   const s1 = g2.frames[0][0];
-  check('details saved on shot', s1.hit === 'light' && s1.speed === 15.5 && s1.tags.includes('Missed right') && s1.breakpoint === 6, JSON.stringify(s1));
+  check('details saved on shot', s1.hit === 'light' && Math.abs(s1.speed * 1.609344 - 25) < 1e-9 && s1.tags.includes('Missed right') && s1.breakpoint === 6, JSON.stringify(s1));
   check('carried feet saved on later shots', g2.frames[5][0].feet === 20 && g2.frames[5][0].target === 10);
   stopAt('summary');
 
@@ -261,7 +267,7 @@ async function run() {
   check('tables sit in a sideways-scrolling box', !!$('#lines .tbl-wrap .tbl'));
   check('accuracy card shows feet repeatability', text('#accuracy').includes('board 20'), text('#accuracy'));
   check('game-by-game table has games 1 and 2', D.querySelectorAll('#byGame tbody tr').length === 2);
-  check('speed card shows the average', text('#speedCard').includes('15.5 mph'), text('#speedCard'));
+  check('speed card shows the average', text('#speedCard').includes('25.0 km/h'), text('#speedCard'));
   stopAt('statsfirst');
 
   await click('[data-subtab="spares"]');
@@ -373,6 +379,15 @@ async function run() {
   // ---- Settings: left-handed flips the lane ----
   await nav('#/settings');
   check('settings shows the app version, matching sw.js', text('#appVersion') === SW_VERSION, `${text('#appVersion')} vs ${SW_VERSION}`);
+  await click('[data-speed-unit="mph"]');
+  check('mph saved', db().settings.speedUnit === 'mph');
+  await nav('#/stats');
+  await click('[data-subtab="first"]');
+  check('speed card converts to mph', text('#speedCard').includes('15.5 mph'), text('#speedCard'));
+  await click('[data-subtab="overview"]');
+  await nav('#/settings');
+  await click('[data-speed-unit="kph"]');
+  check('km/h saved', db().settings.speedUnit === 'kph');
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
   stopAt('settings');
@@ -423,6 +438,51 @@ async function run() {
   await sleep(80);
   check('Bowl tab redirect adds one history entry', W.history.length === len + 1 && W.location.hash.startsWith('#/game/'), `${len} -> ${W.history.length}`);
 
+  // ---- Add details after the game ----
+  // The left-handed game has 3 balls saved in quick mode (frame 2, and both balls of frame 3).
+  for (let i = 0; i < 9; i++) await ball([]);
+  await sleep(100);
+  const lefty = () => db().sessions[0].games.at(-1);
+  const scoreBefore = lefty().score;
+  check('summary offers to add missing details', text('#reviewBtn').includes('3 balls to fill in'), text('#reviewBtn'));
+  stopAt('adddetails');
+  await click('#reviewBtn');
+  await sleep(80);
+  check('Add details opens the first ball without a line', text('.shot-head h2') === 'Editing · Frame 2 · Ball 1' && text('#reviewInfo').includes('3 balls'), `${text('.shot-head h2')} | ${text('#reviewInfo')}`);
+  check('it starts from the line of the ball before', laneVal('feet') === 'Board 5' && laneVal('target') === 'Board 10 · 2nd arrow' && text('#reviewInfo').includes('frame 1, ball 1'), `${laneVal('feet')} | ${text('#reviewInfo')}`);
+  await click('#pins .pin[data-pin="7"]');
+  check('pins are locked after the game', !$('#pins .pin[data-pin="7"]').classList.contains('up') && !$('[data-act="allup"]'));
+  stopAt('review');
+  await click('[data-act="saveNext"]');
+  check('Save moves on to the next ball', text('.shot-head h2') === 'Editing · Frame 3 · Ball 1' && text('#reviewInfo').includes('2 balls'), `${text('.shot-head h2')} | ${text('#reviewInfo')}`);
+  await click('[data-act="skip"]');
+  check('Skip moves on without saving', text('.shot-head h2') === 'Editing · Frame 3 · Ball 2' && laneVal('feet') === '–', `${text('.shot-head h2')} ${laneVal('feet')}`);
+  await tapLane('feet', 30, 'L');
+  await tapLane('target', 15, 'L');
+  check('the last ball says Done', text('[data-act="saveNext"]') === 'Save · done', text('[data-act="saveNext"]'));
+  await click('[data-act="saveNext"]');
+  await sleep(80);
+  {
+    const g = lefty();
+    check('details saved, pins and score unchanged', g.frames[1][0].feet === 5 && g.frames[2][1].feet === 30 && g.frames[2][0].feet === null && g.score === scoreBefore, JSON.stringify(g.frames.slice(1, 3)));
+  }
+  check('after the last ball it goes back to the summary', W.location.hash.startsWith('#/summary/') && text('#reviewBtn').includes('1 ball to fill in'), `${W.location.hash} ${text('#reviewBtn')}`);
+  check('the message mentions the skipped ball', text('#toast .toast-msg').includes('1 ball you skipped'), text('#toast .toast-msg'));
+  check('every ball in Frame by frame has an Edit button', D.querySelectorAll('.frames-review .shot-edit').length === 13, String(D.querySelectorAll('.frames-review .shot-edit').length));
+  await click('.final .box[data-f="2"][data-s="0"]');
+  await sleep(80);
+  check('tapping a ball on the summary opens just that ball', text('.shot-head h2') === 'Editing · Frame 3 · Ball 1' && text('[data-act="saveEdit"]') === 'Save changes');
+  await tapLane('feet', 6, 'L');
+  await tapLane('target', 10, 'L');
+  await click('[data-act="saveEdit"]');
+  await sleep(80);
+  check('saving it goes back to the summary, with nothing left to add', W.location.hash.startsWith('#/summary/') && !$('#reviewBtn') && lefty().frames[2][0].feet === 6, W.location.hash);
+  await click('.frames-review .shot-edit[data-f="0"][data-s="0"]');
+  await sleep(80);
+  await click('[data-act="cancel"]');
+  await sleep(80);
+  check('Cancel goes back to the summary', W.location.hash.startsWith('#/summary/'), W.location.hash);
+
   // ---- Backup round trip ----
   const storage = await import('../js/storage.js');
   const before = localStorage.getItem('bowltrack.v1');
@@ -452,6 +512,29 @@ async function run() {
   stopAt('progress');
   await nav('#/');
   check('home shows the change in average', /^▲ \+\d+\s+average, last 9 games vs\. your first 9$/.test(text('.hero-trend')), text('.hero-trend'));
+  {
+    const months = D.querySelectorAll('#sessionMonths details.month');
+    check('home groups sessions by month, latest two open', months.length === 2 && months[0].open && months[1].open
+      && months[0].querySelectorAll('.sessions li').length === 1 && months[1].querySelectorAll('.sessions li').length === 5, `${months.length}`);
+    check('month header shows its average', /^avg \d+ · 15 games$/.test(months[1].querySelector('.month-sub').textContent), months[1].querySelector('.month-sub')?.textContent);
+  }
+  await nav('#/stats');
+  {
+    // Same window as the calendar: back to the Monday 25 weeks before this week's Monday.
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7) - 25 * 7);
+    const inRange = db().sessions.filter((s) => new Date(`${s.date}T00:00`) >= start).length;
+    check('calendar has a cell for each day bowled', D.querySelectorAll('#calendar rect.cal-day').length === inRange, `${D.querySelectorAll('#calendar rect.cal-day').length} vs ${inRange}`);
+    check('calendar days link to their session', !inRange || !!$(`#calendar a[href="#/session/${db().sessions.at(-1).id}"]`));
+  }
+  stopAt('calendar');
+  await click('[data-subtab="first"]');
+  check('carry card shows strikes on pocket hits', text('#carry').includes('Strikes on pocket hits') && D.querySelectorAll('#carry .carry-list li').length > 0, text('#carry'));
+  stopAt('carry');
+  await click('[data-subtab="overview"]');
+  await nav(`#/session/${db().sessions.at(-1).id}`);
+  check('session shows the feet move', D.querySelectorAll('#moves li').length === 1 && text('#moves .move-title').startsWith('Game 2 · frame 1: feet 18 → 20 (2 boards left)'), text('#moves'));
+  stopAt('moves');
 
   // ---- Goals ----
   await nav('#/goals');
@@ -545,7 +628,8 @@ function fakeSessions() {
   const pick = (pins, n) => pins.slice().sort(() => rand() - 0.5).slice(0, n).sort((a, b) => a - b);
   const leave = (skill) => pick(ALL, 1 + Math.floor(rand() * (rand() < skill ? 2 : 6)));
   const second = (standing, skill) => (rand() < skill + 0.1 ? [] : pick(standing, 1 + Math.floor(rand() * standing.length)));
-  const ball = (standing, w) => ({ standing, feet: 20 - (w % 3), target: 10, hit: standing.length ? ['light', 'high', 'pocket'][Math.floor(rand() * 3)] : 'pocket' });
+  // The last session moves 2 boards after its first game, for the Moves card.
+  const ball = (standing, w, g) => ({ standing, feet: 20 - (w % 3) + (w === 5 && g > 0 ? 2 : 0), target: 10, hit: standing.length ? ['light', 'high', 'pocket'][Math.floor(rand() * 3)] : 'pocket' });
   const sessions = [];
   for (let w = 0; w < 6; w++) {
     const skill = 0.2 + w * 0.09;
@@ -554,13 +638,13 @@ function fakeSessions() {
     for (let g = 0; g < 3; g++) {
       const frames = [];
       for (let f = 0; f < 9; f++) {
-        if (rand() < skill * 0.6) { frames.push([ball([], w)]); continue; }
+        if (rand() < skill * 0.6) { frames.push([ball([], w, g)]); continue; }
         const first = leave(skill);
-        frames.push([ball(first, w), ball(second(first, skill), w)]);
+        frames.push([ball(first, w, g), ball(second(first, skill), w, g)]);
       }
       const first = leave(skill);
       const next = second(first, skill);
-      frames.push(next.length ? [ball(first, w), ball(next, w)] : [ball(first, w), ball(next, w), ball(leave(skill), w)]);
+      frames.push(next.length ? [ball(first, w, g), ball(next, w, g)] : [ball(first, w, g), ball(next, w, g), ball(leave(skill), w, g)]);
       games.push({ id: `w${w}g${g}`, frames });
     }
     const iso = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;

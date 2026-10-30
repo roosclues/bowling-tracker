@@ -1,6 +1,9 @@
 // Game entry: record each ball (pins left, feet, arrow, breakpoint, extras). Quick mode hides
 // the line and details and doesn't pre-fill them, so new balls are saved with pins only.
 // Spare balls get a suggested line from the 3-6-9 system.
+// After the game, the summary opens balls here to add details (#/edit/…), one at a time or
+// stepping through every ball without feet or arrow (#/review/…). The pins are locked then,
+// so the score can't change.
 
 import { db, save, findSession, findGame, refreshScore, stampReachedGoals, unstampGoals } from '../storage.js';
 import { nextShot, pinsBefore, isFreshRack, scoreGame, frameDone } from '../scoring.js';
@@ -12,13 +15,40 @@ import { scoreboardHTML } from '../scoreboard.js';
 import { HITS, TAGS, infoButton } from '../terms.js';
 import { topbar, icon, aimHTML } from '../ui.js';
 import { buzz, celebrate } from '../device.js';
-import { esc, toast, go, plural, tapGuard } from '../util.js';
+import { esc, toast, go, plural, tapGuard, toSpeedUnit, fromSpeedUnit, SPEED_UNITS } from '../util.js';
+
+const HINT_GAMES = 3; // finished games before the how-to hints are hidden
 
 let draft = null;     // shot being entered, keyed to game + position
 let editing = null;   // { gid, frame, shot } when changing an earlier ball
 let moreOpen = false; // remember whether "More details" is expanded
 let undone = [];      // balls taken back with Undo, newest last: { key, shot }
+let reviewing = false; // stepping through the balls without a line, after the game
 const once = tapGuard(); // ignore a second Save/Undo tap that lands right after the first
+
+const hasLine = (shot) => shot.feet != null && shot.target != null;
+
+// Balls in `game` without feet or arrow, in order, starting at position `from`.
+export function ballsWithoutLine(game, from = { frame: 0, shot: 0 }) {
+  const out = [];
+  game.frames.forEach((shots, frame) => shots.forEach((shot, s) => {
+    if (hasLine(shot) || frame < from.frame || (frame === from.frame && s < from.shot)) return;
+    out.push({ frame, shot: s });
+  }));
+  return out;
+}
+
+// The nearest earlier ball of the same kind (first ball or spare ball) in this game that has
+// a line. Filling in a game afterwards starts each ball from it, since most balls repeat it.
+function earlierLine(game, frame, shot, fresh) {
+  for (let f = frame; f >= 0; f--) {
+    const shots = game.frames[f];
+    for (let s = (f === frame ? shot : shots.length) - 1; s >= 0; s--) {
+      if (isFreshRack(shots, s) === fresh && hasLine(shots[s])) return { shot: shots[s], frame: f, index: s };
+    }
+  }
+  return null;
+}
 
 // Most recent ball of the same kind with a line recorded, to pre-fill feet and arrow.
 // First balls copy the last first ball; spare balls prefer the last spare at the same leave.
@@ -90,7 +120,13 @@ function shotFromDraft(d, fresh) {
   };
 }
 
+// A stored mph speed as the speed box shows it, in the unit picked in Settings.
+function speedValue(mph) {
+  return mph == null ? '' : String(+toSpeedUnit(mph, db.settings.speedUnit).toFixed(1));
+}
+
 function moreHTML(d, fresh) {
+  const unit = db.settings.speedUnit;
   const hits = fresh ? `
     <div class="field">
       <label>Pin hit ${infoButton('hit')}</label>
@@ -102,8 +138,8 @@ function moreHTML(d, fresh) {
   return `
     ${hits}
     <div class="field">
-      <label for="speed">Ball speed (mph) ${infoButton('speed')}</label>
-      <input id="speed" type="number" inputmode="decimal" step="0.1" min="0" max="40" placeholder="e.g. 15.2" value="${d.speed ?? ''}">
+      <label for="speed">Ball speed (${SPEED_UNITS[unit]}) ${infoButton('speed')}</label>
+      <input id="speed" type="number" inputmode="decimal" step="0.1" min="0" max="${unit === 'mph' ? 40 : 64}" placeholder="e.g. ${unit === 'mph' ? '15.2' : '24.5'}" value="${speedValue(d.speed)}">
     </div>
     <div class="field">
       <label>How it felt</label>
@@ -120,6 +156,31 @@ function moreHTML(d, fresh) {
 // Entry from the router: always start in "enter next ball" mode.
 export function render(root, sid, gid) {
   editing = null;
+  reviewing = false;
+  draw(root, sid, gid);
+}
+
+// From the summary: change the details of one ball.
+export function renderEdit(root, sid, gid, frame, shot) {
+  const exists = !!findGame(sid, gid)?.frames[frame]?.[shot];
+  editing = exists ? { gid, frame: Number(frame), shot: Number(shot) } : null;
+  reviewing = false;
+  draft = null;
+  draw(root, sid, gid);
+}
+
+// From the summary: step through every ball without feet or arrow.
+export function renderReview(root, sid, gid) {
+  const game = findGame(sid, gid);
+  const [first] = game ? ballsWithoutLine(game) : [];
+  if (!first) {
+    toast('Every ball already has its feet and arrow.');
+    go(`#/summary/${sid}/${gid}`, { replace: true });
+    return;
+  }
+  editing = { gid, ...first };
+  reviewing = true;
+  draft = null;
   draw(root, sid, gid);
 }
 
@@ -144,48 +205,67 @@ function draw(root, sid, gid) {
   const key = `${gid}:${target.frame}:${target.shot}:${editing ? 'edit' : 'new'}`;
   if (!draft || draft.key !== key) {
     const top = undone[undone.length - 1];
-    if (editing) draft = draftFrom(shots[target.shot], key, true);
-    else if (top?.key === key) draft = draftFrom(top.shot, key, true);
+    if (editing) {
+      draft = draftFrom(shots[target.shot], key, true);
+      const prev = reviewing && !hasLine(shots[target.shot]) ? earlierLine(game, target.frame, target.shot, fresh) : null;
+      if (prev) {
+        draft.feet ??= prev.shot.feet;
+        draft.target ??= prev.shot.target;
+        draft.copiedFrom = prev;
+      }
+    } else if (top?.key === key) draft = draftFrom(top.shot, key, true);
     else {
       undone = [];
       draft = newDraft(key, fresh, available.join('-'));
     }
   }
   const d = draft;
+  // The game is over and a ball is being filled in from the summary.
+  const finished = !pos;
+  const left = reviewing ? ballsWithoutLine(game, target).length : 0;
+  const summaryHash = `#/summary/${sid}/${gid}`;
   // Editing always shows every detail, so an earlier ball's details can always be fixed.
   const quick = db.settings.quick && !editing;
   const last = quick || editing ? null : lastLine(fresh, available.join('-'));
   const aim = fresh || editing ? null : spareAim(available, strikeLineFor(db.sessions), db.settings.hand);
   const gameNo = session.games.indexOf(game) + 1;
   const { total } = scoreGame(game.frames);
+  // How-to hints show for your first few games, then make room for the pins and lane.
+  const isNew = db.sessions.reduce((n, s) => n + s.games.filter((g) => g.done).length, 0) < HINT_GAMES;
 
   root.innerHTML = `
     ${topbar({
-      back: `#/session/${sid}`,
+      back: finished ? summaryHash : `#/session/${sid}`,
       title: `Game ${gameNo}`,
       sub: `${esc(session.center || 'Bowling')}${session.lane ? ` · Lane ${esc(session.lane)}` : ''}`,
       right: `<div class="bigscore" aria-label="Score"><span>Score</span>${total}</div>`,
     })}
     <div class="page game">
       <div class="sb-wrap">${scoreboardHTML(game.frames, { current: pos, selected: editing })}</div>
-      <p class="hint center">Tap any ball on the scoreboard to edit its details.</p>
+      ${isNew ? '<p class="hint center">Tap any ball on the scoreboard to edit its details.</p>' : ''}
 
       <div class="shot-head">
         <h2>${editing ? 'Editing · ' : ''}Frame ${target.frame + 1} · Ball ${target.shot + 1}</h2>
         <span class="pill">${fresh ? 'Full rack' : `${plural(available.length, 'pin')} to pick up`}</span>
       </div>
+      ${reviewing ? `
+        <p class="hint review-info" id="reviewInfo">Adding details after the game · ${plural(left, 'ball')} without feet or arrow left${d.copiedFrom
+          ? `. Feet and arrow copied from frame ${d.copiedFrom.frame + 1}, ball ${d.copiedFrom.index + 1}: change them if this ball was different.`
+          : '.'}</p>` : ''}
       ${session.notes ? `<p class="focus" id="focus">${icon('flag', 16)}<span>Working on: ${esc(session.notes)}</span></p>` : ''}
       ${aim ? aimHTML(aim, { use: !quick }) : ''}
 
       <section class="card">
         <div class="card-h">
           <h3>Pins left standing</h3>
-          <button type="button" class="link" data-act="allup">All still up</button>
+          ${finished ? '' : '<button type="button" class="link" data-act="allup">All still up</button>'}
         </div>
         <div id="pins"></div>
-        <p class="hint center">${editing
-          ? 'Fix the pins if needed. To change a strike, spare or the number of balls, use Undo.'
-          : 'Tap the pins still standing. Nothing tapped = all knocked down.'}</p>
+        ${finished || editing || isNew ? `<p class="hint center">${finished
+          ? 'Pins are locked once the game is over, so the score stays the same. To fix pins, use Undo last ball on the summary.'
+          : editing
+            ? 'Fix the pins if needed. To change a strike, spare or the number of balls, use Undo.'
+            : 'Tap the pins still standing. Nothing tapped = all knocked down.'}</p>` : ''}
       </section>
 
       ${quick ? `
@@ -209,7 +289,10 @@ function draw(root, sid, gid) {
 
     </div>
     <div class="actionbar">
-      ${editing
+      ${reviewing
+        ? `<button type="button" class="btn" data-act="skip">Skip</button>
+           <button type="button" class="btn primary" data-act="saveNext">${left > 1 ? 'Save · next ball' : 'Save · done'}</button>`
+        : editing
         ? `<button type="button" class="btn" data-act="cancel">Cancel</button>
            <button type="button" class="btn primary" data-act="saveEdit">Save changes</button>`
         : `<button type="button" class="btn" data-act="undo">${icon('undo', 20)} Undo</button>
@@ -228,6 +311,7 @@ function draw(root, sid, gid) {
   const pins = mountPins(root.querySelector('#pins'), {
     available,
     standing: d.standing,
+    readOnly: finished,
     onChange: updateSaveLabel,
   });
   const lane = quick ? null : mountLane(root.querySelector('#lane'), { hand: db.settings.hand, value: d });
@@ -237,12 +321,40 @@ function draw(root, sid, gid) {
     root.querySelector('#more').addEventListener('toggle', (e) => { moreOpen = e.target.open; });
     root.querySelector('#speed').addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
-      d.speed = Number.isFinite(v) ? v : null;
+      d.speed = Number.isFinite(v) ? fromSpeedUnit(v, db.settings.speedUnit) : null;
     });
     root.querySelector('#note').addEventListener('input', (e) => { d.note = e.target.value; });
   }
 
+  // Back to the summary when filling in a finished game; replacing this screen in the history
+  // so the phone's Back button doesn't return to it.
+  const toSummary = (message) => {
+    editing = null;
+    reviewing = false;
+    draft = null;
+    if (message) toast(message);
+    go(summaryHash, { replace: true });
+  };
+  // Review: on to the next ball without feet or arrow, or back to the summary after the last.
+  const nextBall = () => {
+    const [next] = ballsWithoutLine(game, { frame: target.frame, shot: target.shot + 1 });
+    if (!next) {
+      const still = ballsWithoutLine(game).length;
+      toSummary(still ? `Done. ${plural(still, 'ball')} you skipped still ${still === 1 ? 'has' : 'have'} no feet or arrow.` : 'Done. Every ball has its feet and arrow now.');
+      return;
+    }
+    editing = { gid, ...next };
+    draft = null;
+    draw(root, sid, gid);
+    window.scrollTo({ top: 0 });
+  };
+
   root.onclick = (e) => {
+    if (finished && e.target.closest('.tb-back')) {
+      e.preventDefault();
+      toSummary();
+      return;
+    }
     const el = e.target.closest('button');
     if (!el) return;
 
@@ -270,7 +382,7 @@ function draw(root, sid, gid) {
     }
 
     const act = el.dataset.act;
-    if ((act === 'save' || act === 'undo' || act === 'saveEdit') && !once()) return;
+    if (['save', 'undo', 'saveEdit', 'saveNext'].includes(act) && !once()) return;
 
     switch (act) {
       case 'aim':
@@ -285,7 +397,7 @@ function draw(root, sid, gid) {
         if (last.breakpoint != null) d.breakpoint = last.breakpoint;
         if (last.speed != null) {
           d.speed = last.speed;
-          root.querySelector('#speed').value = last.speed;
+          root.querySelector('#speed').value = speedValue(last.speed);
         }
         lane.refresh();
         break;
@@ -350,7 +462,8 @@ function draw(root, sid, gid) {
         draw(root, sid, gid);
         break;
       }
-      case 'saveEdit': {
+      case 'saveEdit':
+      case 'saveNext': {
         const frame = game.frames[target.frame];
         const updated = shotFromDraft(d, fresh);
         const after = frame.map((s, i) => (i === target.shot ? updated : s));
@@ -361,13 +474,28 @@ function draw(root, sid, gid) {
         frame[target.shot] = updated;
         refreshScore(game);
         save();
+        if (act === 'saveNext') {
+          nextBall();
+          return;
+        }
+        if (finished) {
+          toSummary('Saved');
+          return;
+        }
         editing = null;
         draft = null;
         toast('Saved');
         draw(root, sid, gid);
         break;
       }
+      case 'skip':
+        nextBall();
+        break;
       case 'cancel':
+        if (finished) {
+          toSummary();
+          return;
+        }
         editing = null;
         draft = null;
         draw(root, sid, gid);

@@ -126,6 +126,7 @@ export function normalizeDB(data) {
       skin: SKINS.includes(s.skin) ? s.skin : SKINS[0],
       seenVersion: typeof s.seenVersion === 'string' && /^v[\w-]{1,30}$/.test(s.seenVersion) ? s.seenVersion : null,
       quick: s.quick === true,
+      speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
       goals: normGoals(s.goals, gameIds),
     },
     sessions,

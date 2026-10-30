@@ -6,7 +6,7 @@ import { mountLaneMap } from '../lanemap.js';
 import { topbar } from '../ui.js';
 import { esc } from '../util.js';
 
-const ORDER = ['boards', 'feet', 'arrows', 'breakpoint', 'hit', 'strike', 'spare', 'split', 'spareAim', 'speed', 'oil', 'quick'];
+const ORDER = ['boards', 'feet', 'arrows', 'breakpoint', 'hit', 'carry', 'strike', 'spare', 'split', 'spareAim', 'speed', 'oil', 'quick'];
 
 export function render(root) {
   root.innerHTML = `
@@ -20,7 +20,7 @@ export function render(root) {
           <li><strong>More details</strong> (optional): pin hit, ball speed, how it felt.</li>
           <li>Press <strong>Save</strong>. Made a mistake? <strong>Undo</strong> brings the last ball back so you can fix it.</li>
         </ol>
-        <p class="hint">In a hurry? <strong>Pins only</strong> under the lane switches to quick mode, which saves just the pins.</p>
+        <p class="hint">In a hurry? <strong>Pins only</strong> under the lane switches to quick mode, which saves just the pins. After the game, tap any ball on the summary, or <strong>Add details</strong>, to fill in your feet, arrow and the rest. Each ball starts from the line of the ball before it, and the pins stay as you entered them.</p>
       </section>
 
       <section class="card">

@@ -41,6 +41,27 @@ function sessionRow(s) {
     </li>`;
 }
 
+// Sessions newest first, one group per month with that month's average. The latest two
+// months are open; older ones start collapsed.
+function sessionGroups(sessions) {
+  const months = new Map();
+  for (const s of sessions) {
+    const key = s.date.slice(0, 7);
+    months.set(key, [...(months.get(key) ?? []), s]);
+  }
+  return [...months].map(([key, list], i) => {
+    const [y, m] = key.split('-').map(Number);
+    const name = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const scores = list.flatMap((s) => s.games.filter((g) => g.done).map((g) => g.score));
+    const sub = [scores.length && `avg ${Math.round(avg(scores))}`, plural(scores.length, 'game')].filter(Boolean).join(' · ');
+    return `
+      <details class="month"${i < 2 ? ' open' : ''}>
+        <summary><span class="month-name">${esc(name)}</span><span class="month-sub">${sub}</span></summary>
+        <ul class="list sessions">${list.map(sessionRow).join('')}</ul>
+      </details>`;
+  }).join('');
+}
+
 export function render(root) {
   const cur = currentGame();
   const all = computeStats(db.sessions);
@@ -128,6 +149,6 @@ export function render(root) {
         </section>` : ''}
 
       ${sessions.length ? `<h3 class="section">Sessions</h3>
-      <ul class="list sessions">${sessions.map(sessionRow).join('')}</ul>` : ''}
+      <div id="sessionMonths">${sessionGroups(sessions)}</div>` : ''}
     </div>`;
 }

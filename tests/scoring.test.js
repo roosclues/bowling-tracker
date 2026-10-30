@@ -2,8 +2,9 @@ import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/
 import { normalizeDB } from '../js/normalize.js';
 import {
   computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
-  scoreWithSpares,
+  scoreWithSpares, sessionMoves,
 } from '../js/stats.js';
+import { carryNote } from '../js/terms.js';
 import { spareAim, keyPin } from '../js/spares.js';
 import { plural } from '../js/util.js';
 
@@ -244,6 +245,53 @@ test('tips name the leave you keep missing, with an aim', () => {
   const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [miss, miss, miss, miss] }] }] });
   const tip = tips(computeStats(db.sessions), 'R').find((t) => t.title.startsWith('The 7 '));
   eq(!!tip && tip.text.includes('board 11') && tip.basis.includes('4 tries'), true);
+});
+
+test('carry counts what pocket hits left', () => {
+  const pocket = (standing) => [{ standing, hit: 'pocket' }, ...(standing.length ? [{ standing: [] }] : [])];
+  const frames = [pocket([]), pocket([10]), pocket([10]), pocket([4]), [{ standing: [7], hit: 'high' }, { standing: [] }]];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames }] }] });
+  const { carry } = computeStats(db.sessions);
+  eq([carry.pocket, carry.strikes], [4, 1]);
+  eq(carry.leaves.map((l) => [l.pins.join('-'), l.n]), [['10', 2], ['4', 1]]);
+});
+
+test('carry notes are mirrored for left-handers', () => {
+  eq(carryNote([10], 'R').label, 'Weak hit');
+  eq(carryNote([7], 'L').label, 'Weak hit');
+  eq(carryNote([10], 'R').text.includes('2 boards left'), true);
+  eq(carryNote([7], 'L').text.includes('2 boards right'), true);
+  eq([carryNote([4], 'R').label, carryNote([6], 'L').label], ['Too strong', 'Too strong']);
+  eq([carryNote([7], 'R').fix, carryNote([10], 'L').fix], [false, false]);
+  eq(carryNote([2, 8], 'R'), null);
+});
+
+test('a tip names the pin your pocket hits keep leaving', () => {
+  const pocket = (standing) => [{ standing, hit: 'pocket' }, ...(standing.length ? [{ standing: [] }] : [])];
+  const frames = [pocket([]), pocket([]), pocket([]), pocket([]), pocket([10]), pocket([10]), pocket([10]), pocket([10]), pocket([9]), pocket([5])];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames }] }] });
+  const tip = tips(computeStats(db.sessions), 'R').find((t) => t.title.startsWith('Pocket hits leaving'));
+  eq(!!tip && tip.title.endsWith('the 10') && tip.text.includes('4 of 10'), true);
+});
+
+test('moves: a kept feet change counts, a one-off board or arrow change does not', () => {
+  // First balls by feet board (and arrow); every ball is a strike unless it leaves the 10.
+  const ball = (feet, target, strike = false) => (strike ? [{ standing: [], feet, target }] : [{ standing: [10], feet, target }, { standing: [] }]);
+  const frames = [
+    ball(20, 10), ball(20, 10), ball(23, 10), ball(20, 12), // a one-off board 23, then an arrow-only change
+    ball(22, 11, true), ball(22, 11, true), ball(22, 11), ball(22, 11, true), ball(22, 11, true), ball(22, 11, true),
+  ];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames }] }] });
+  const moves = sessionMoves(db.sessions[0]);
+  eq(moves.map((m) => [m.gameNo, m.frame, m.from, m.to]), [[1, 4, 20, 22]]);
+  const [m] = moves;
+  eq([m.before.n, m.before.strikes, m.after.n, m.after.strikes, m.before.arrow, m.after.arrow], [4, 0, 6, 5, 10, 11]);
+});
+
+test('moves need 3 first balls on each side', () => {
+  const ball = (feet) => [{ standing: [10], feet, target: 10 }, { standing: [] }];
+  const db = normalizeDB({ sessions: [{ id: 'a', date: '2026-10-01', games: [{ id: 'g', frames: [ball(20), ball(20), ball(22), ball(22), ball(22)] }] }] });
+  eq(sessionMoves(db.sessions[0]), []);
 });
 
 test('feel tags track how first balls turned out', () => {

@@ -2,8 +2,8 @@
 
 import { pinsBefore, isFreshRack, isSplit, frameDone, scoreGame } from './scoring.js';
 import { spareAim } from './spares.js';
-import { TAG } from './terms.js';
-import { avg, pct, plural } from './util.js';
+import { TAG, carryNote } from './terms.js';
+import { avg, pct, plural, toSpeedUnit, SPEED_UNITS } from './util.js';
 
 // Every recorded ball, with context.
 export function collectShots(sessions) {
@@ -140,6 +140,22 @@ export function computeStats(sessions) {
   const hits = {};
   for (const x of first) if (x.shot.hit) hits[x.shot.hit] = (hits[x.shot.hit] ?? 0) + 1;
 
+  // Strike carry: what pocket hits left standing.
+  const pocketShots = first.filter((x) => x.shot.hit === 'pocket');
+  const carryMap = new Map();
+  for (const x of pocketShots) {
+    if (!x.shot.standing.length) continue;
+    const k = x.shot.standing.join('-');
+    const e = carryMap.get(k) ?? { pins: x.shot.standing, n: 0 };
+    e.n++;
+    carryMap.set(k, e);
+  }
+  const carry = {
+    pocket: pocketShots.length,
+    strikes: pocketShots.filter((x) => x.shot.standing.length === 0).length,
+    leaves: [...carryMap.values()].sort((a, b) => b.n - a.n),
+  };
+
   // "How it felt" tags, and how first balls with each tag turned out.
   const tags = {};
   const feelMap = new Map();
@@ -161,17 +177,10 @@ export function computeStats(sessions) {
   const speeds = shots.map((x) => x.shot.speed).filter((v) => typeof v === 'number');
   const speedAvg = avg(speeds);
   const speedSD = speeds.length >= 2 ? Math.sqrt(avg(speeds.map((v) => (v - speedAvg) ** 2))) : null;
-  const bandMap = new Map();
-  for (const x of first) {
-    if (typeof x.shot.speed !== 'number') continue;
-    const mph = Math.floor(x.shot.speed);
-    const e = bandMap.get(mph) ?? { mph, n: 0, strikes: 0, pins: 0 };
-    e.n++;
-    e.pins += x.knocked;
-    if (x.shot.standing.length === 0) e.strikes++;
-    bandMap.set(mph, e);
-  }
-  const speedBands = [...bandMap.values()].sort((a, b) => a.mph - b.mph);
+  // First balls with a speed, for speedBands().
+  const speedFirst = first
+    .filter((x) => typeof x.shot.speed === 'number')
+    .map((x) => ({ speed: x.shot.speed, knocked: x.knocked, strike: x.shot.standing.length === 0 }));
 
   // First balls only, like the rest of the line stats.
   const firstTagged = (t) => first.filter((x) => x.shot.tags?.includes(t)).length;
@@ -210,8 +219,8 @@ export function computeStats(sessions) {
     splits: splits.length,
     leaveCount: leaveShots.length,
     frames, opens,
-    leaves, combos, hits, tags, feel,
-    speedAvg, speedSD, speedBands,
+    leaves, combos, hits, carry, tags, feel,
+    speedAvg, speedSD, speedFirst,
     speedCount: speeds.length,
     accuracy,
     byGame: byGame.filter((b) => b.scores.length).map((b) => ({ ...b, games: b.scores.length, average: avg(b.scores) })),
@@ -219,6 +228,60 @@ export function computeStats(sessions) {
 }
 
 // The line you play most on first balls: { feet, target }, or null before any are recorded.
+// First balls grouped by speed in the given unit: 1 mph or 2 km/h wide.
+// Returns [{ from, to, n, strikes, pins }], slowest first.
+export function speedBands(stats, unit) {
+  const width = unit === 'mph' ? 1 : 2;
+  const bands = new Map();
+  for (const x of stats.speedFirst) {
+    const from = Math.floor(toSpeedUnit(x.speed, unit) / width) * width;
+    const e = bands.get(from) ?? { from, to: from + width, n: 0, strikes: 0, pins: 0 };
+    e.n++;
+    e.pins += x.knocked;
+    if (x.strike) e.strikes++;
+    bands.set(from, e);
+  }
+  return [...bands.values()].sort((a, b) => a.from - b.from);
+}
+
+export const MOVE_MIN = 3; // first balls needed on each side of a move to list it
+
+// How a run of first balls went, for comparing before and after a move.
+function runOf(list) {
+  const hit = list.filter((x) => x.shot.hit);
+  return {
+    n: list.length,
+    strikes: list.filter((x) => x.shot.standing.length === 0).length,
+    pins: avg(list.map((x) => x.knocked)),
+    hitN: hit.length,
+    pocket: hit.filter((x) => x.shot.hit === 'pocket').length,
+    arrow: usual(list, 'target'),
+  };
+}
+
+// Feet moves within a session: a new feet board on a first ball that the next first ball with
+// feet keeps. A one-off board, or a different arrow, is a throw that varied, not a move.
+// Each move compares the first balls since the move before with those up to the next one.
+// Returns [{ gameNo, frame, from, to, before, after }], leaving out moves with fewer than
+// MOVE_MIN first balls on either side.
+export function sessionMoves(session) {
+  const first = collectShots([session]).filter((x) => x.fresh);
+  const withFeet = first.filter((x) => x.shot.feet != null);
+  const moves = [];
+  let spot = withFeet[0]?.shot.feet ?? null;
+  withFeet.forEach((x, i) => {
+    const feet = x.shot.feet;
+    if (feet !== spot && withFeet[i + 1]?.shot.feet === feet) {
+      moves.push({ at: first.indexOf(x), gameNo: x.gameNo, frame: x.frame, from: spot, to: feet });
+      spot = feet;
+    }
+  });
+  const cuts = [0, ...moves.map((m) => m.at), first.length];
+  return moves
+    .map(({ at, ...m }, j) => ({ ...m, before: runOf(first.slice(cuts[j], at)), after: runOf(first.slice(at, cuts[j + 2])) }))
+    .filter((m) => m.before.n >= MOVE_MIN && m.after.n >= MOVE_MIN);
+}
+
 export function strikeLine(stats) {
   const c = stats.combos.reduce((best, x) => (!best || x.n > best.n ? x : best), null);
   return c ? { feet: c.feet, target: c.target } : null;
@@ -401,8 +464,8 @@ function bestCombo(stats, min) {
 // Coaching hints from the data. Returns a list of { title, text, basis, topic, link? }:
 // basis says how much data the hint stands on, topic is 'spares' or 'line' (which Stats tab
 // it belongs on), and link is an optional screen to act on it. Pass `sessions` to also
-// compare bowling centers.
-export function tips(stats, hand, sessions = null) {
+// compare bowling centers. `speedUnit` is 'kph' or 'mph'.
+export function tips(stats, hand, sessions = null, speedUnit = 'kph') {
   const out = [];
   const handSide = hand === 'L' ? 'left' : 'right';
   const otherSide = hand === 'L' ? 'right' : 'left';
@@ -425,6 +488,20 @@ export function tips(stats, hand, sessions = null) {
     } else if (pocket / n >= 0.5) {
       out.push({ topic: 'line', title: 'Pocket hits!', text: 'Your line is working. Keep the same feet and arrow, and focus on repeating your release.', basis: hitBasis });
     }
+  }
+
+  // Pocket hits that don't carry, mostly leaving the same pins.
+  const { carry } = stats;
+  const notCarried = carry.pocket - carry.strikes;
+  const topLeave = carry.leaves[0];
+  const carryFix = topLeave && carryNote(topLeave.pins, hand);
+  if (carry.pocket >= 10 && carry.strikes / carry.pocket < 0.6 && topLeave.n / notCarried >= 0.4 && carryFix?.fix) {
+    out.push({
+      topic: 'line',
+      title: `Pocket hits leaving the ${topLeave.pins.join('-')}`,
+      text: `You left the ${topLeave.pins.join('-')} on ${topLeave.n} of ${carry.pocket} pocket hits. ${carryFix.text}`,
+      basis: `From ${plural(carry.pocket, 'pocket hit')}.`,
+    });
   }
 
   // The leave you miss most (not splits: those are hard for everyone).
@@ -472,7 +549,7 @@ export function tips(stats, hand, sessions = null) {
     out.push({
       topic: 'line',
       title: 'Steady your speed',
-      text: `Your speed changes by about ±${stats.speedSD.toFixed(1)} mph from ball to ball, which changes how much the ball hooks. Use the same steps and the same push-away every time.`,
+      text: `Your speed changes by about ±${toSpeedUnit(stats.speedSD, speedUnit).toFixed(1)} ${SPEED_UNITS[speedUnit]} from ball to ball, which changes how much the ball hooks. Use the same steps and the same push-away every time.`,
       basis: `From ${plural(stats.speedCount, 'ball')} with a speed recorded.`,
     });
   }

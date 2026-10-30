@@ -7,17 +7,20 @@
 import { db } from '../storage.js';
 import {
   computeStats, filterSessions, tips, progress, personalBests, sessionAverages, strikeLineFor, practiceByLeave,
-  GOAL_TYPES, MAX_GAME_NO,
+  speedBands, GOAL_TYPES, MAX_GAME_NO,
 } from '../stats.js';
 import { spareAim } from '../spares.js';
-import { lineChart, barList } from '../charts.js';
+import { lineChart, barList, calendarHeat } from '../charts.js';
 import { miniPins } from '../pins.js';
-import { HITS, infoButton } from '../terms.js';
+import { HITS, infoButton, carryNote } from '../terms.js';
 import { topbar, tipsHTML, kvRow } from '../ui.js';
-import { esc, fmtPct, fmtDate, fmtShortDate, pct, plural, go } from '../util.js';
+import { esc, fmtPct, fmtDate, fmtShortDate, pct, plural, go, avg, fmtSpeed, SPEED_UNITS } from '../util.js';
 
 const filters = { days: 0, center: '', ball: '', oil: '' };
 const MIN_COMBO = 3;
+const MIN_CARRY = 5; // pocket hits before the carry card shows its numbers
+const CAL_NEAR = 5;  // pins from your average for the lighter calendar shades
+const CAL_FAR = 15;  // ...and for the darkest
 let trendBy = null; // 'session' or 'game'; picked automatically until you choose
 let tab = 'overview';
 
@@ -97,7 +100,42 @@ function progressCard(p, games) {
     </section>`;
 }
 
-const STREAK_NAMES = { 2: 'a double', 3: 'a turkey', 12: 'a perfect game!' };
+// Each day you bowled, shaded by how its average compares with your average over these games.
+function calendarCard(sessions, st) {
+  if (!st.games.length) return '';
+  const byDay = new Map();
+  for (const s of sessions) {
+    const e = byDay.get(s.date) ?? { scores: [], sid: s.id };
+    e.scores.push(...s.games.filter((g) => g.done).map((g) => g.score));
+    e.sid = s.id; // the day's last session
+    byDay.set(s.date, e);
+  }
+  const days = new Map();
+  for (const [date, e] of byDay) {
+    if (!e.scores.length) continue;
+    const dayAvg = Math.round(avg(e.scores));
+    const diff = dayAvg - Math.round(st.average);
+    const level = diff >= CAL_FAR ? 2 : diff >= CAL_NEAR ? 1 : diff <= -CAL_FAR ? -2 : diff <= -CAL_NEAR ? -1 : 0;
+    days.set(date, {
+      level,
+      href: `#/session/${e.sid}`,
+      label: `${fmtDate(date)} · ${plural(e.scores.length, 'game')} · average ${dayAvg} (${diff > 0 ? '+' : ''}${diff})`,
+    });
+  }
+  return `
+    <section class="card" id="calendar">
+      <div class="card-h"><h3>When you bowled</h3><small>last 26 weeks</small></div>
+      ${calendarHeat(days)}
+      <div class="cal-key" aria-hidden="true">
+        <span>Below your average</span>
+        ${[0, 1, 2, 3, 4].map((l) => `<i class="cal-${l}"></i>`).join('')}
+        <span>Above</span>
+      </div>
+      <p class="hint">Middle shade = within ${CAL_NEAR - 1} pins of your average (${Math.round(st.average)}); darkest = ${CAL_FAR}+ pins off. Tap a day to open it.</p>
+    </section>`;
+}
+
+const STREAK_NAMES ={ 2: 'a double', 3: 'a turkey', 12: 'a perfect game!' };
 
 function bestsCard(b) {
   if (!b) return '';
@@ -195,6 +233,39 @@ function hitsCard(st) {
     </section>`;
 }
 
+// Strike carry: what your pocket hits left, and what each leave usually means.
+function carryCard(st, hand) {
+  if (!hitCount(st)) return '';
+  const c = st.carry;
+  const head = `<div class="card-h"><h3>Pocket hits: did they carry?</h3>${infoButton('carry')}</div>`;
+  if (c.pocket < MIN_CARRY) {
+    return `
+      <section class="card" id="carry">
+        ${head}
+        <p class="hint">Shows once you have ${MIN_CARRY} pocket hits recorded (${c.pocket} so far).</p>
+      </section>`;
+  }
+  // Leaves with a known meaning get a row; the rest (like a standing head pin) are summed up.
+  const known = c.leaves.map((l) => ({ l, note: carryNote(l.pins, hand) })).filter((x) => x.note);
+  const other = c.leaves.filter((l) => !carryNote(l.pins, hand)).reduce((n, l) => n + l.n, 0);
+  return `
+    <section class="card" id="carry">
+      ${head}
+      <ul class="kv">${kvRow('Strikes on pocket hits', fmtPct(c.strikes, c.pocket), { side: `${c.strikes} of ${c.pocket}` })}</ul>
+      ${known.length ? `
+        <ul class="carry-list">${known.map(({ l, note }) => `
+          <li>
+            ${miniPins(l.pins, 34)}
+            <span class="leave-info">
+              <span class="leave-name"><strong>${l.pins.join('-')}</strong> · ${l.n}× · ${note.label}</span>
+              <span class="sub">${note.text}</span>
+            </span>
+          </li>`).join('')}</ul>` : ''}
+      ${other ? `<p class="hint">${plural(other, 'other leave')}, unusual after a pocket hit: check the Pin hit you recorded for those balls.</p>` : ''}
+      ${c.leaves.length ? '' : '<p class="hint">Every pocket hit was a strike. 🎳</p>'}
+    </section>`;
+}
+
 function byGameCard(rows) {
   if (rows.length < 2) return '';
   return `
@@ -216,18 +287,19 @@ function byGameCard(rows) {
 
 function speedCard(st) {
   if (!st.speedCount) return '';
-  const bands = st.speedBands;
+  const unit = db.settings.speedUnit;
+  const bands = speedBands(st, unit);
   return `
     <section class="card" id="speedCard">
       <div class="card-h"><h3>Ball speed</h3>${infoButton('speed')}</div>
       <ul class="kv">
-        ${kvRow('Average', `${st.speedAvg.toFixed(1)} mph`, { side: plural(st.speedCount, 'ball') })}
-        ${st.speedSD !== null ? kvRow('Typical change ball to ball', `±${st.speedSD.toFixed(1)} mph`, { side: st.speedSD < 0.6 ? 'steady' : '' }) : ''}
+        ${kvRow('Average', fmtSpeed(st.speedAvg, unit), { side: plural(st.speedCount, 'ball') })}
+        ${st.speedSD !== null ? kvRow('Typical change ball to ball', `±${fmtSpeed(st.speedSD, unit)}`, { side: st.speedSD < 0.6 ? 'steady' : '' }) : ''}
       </ul>
       ${bands.length >= 2 ? table(`
         <thead><tr><th>Speed</th><th class="num">1st balls</th><th class="num">Strike</th><th class="num">Pins</th></tr></thead>
         <tbody>${bands.map((b) => `
-          <tr><td>${b.mph}–${b.mph + 1} mph</td><td class="num">${b.n}</td><td class="num">${fmtPct(b.strikes, b.n)}</td><td class="num">${(b.pins / b.n).toFixed(1)}</td></tr>`).join('')}</tbody>`) : ''}
+          <tr><td>${b.from}–${b.to} ${SPEED_UNITS[unit]}</td><td class="num">${b.n}</td><td class="num">${fmtPct(b.strikes, b.n)}</td><td class="num">${(b.pins / b.n).toFixed(1)}</td></tr>`).join('')}</tbody>`) : ''}
     </section>`;
 }
 
@@ -310,7 +382,7 @@ export function render(root) {
   if (!oils.includes(filters.oil)) filters.oil = '';
   const sessions = filterSessions(db.sessions, filters);
   const st = computeStats(sessions);
-  const hints = tips(st, db.settings.hand, sessions);
+  const hints = tips(st, db.settings.hand, sessions, db.settings.speedUnit);
   const filtered = filters.days || filters.center || filters.ball || filters.oil;
   const practiced = db.practice.length;
   const practiceMade = db.practice.filter((p) => p.made).length;
@@ -329,6 +401,7 @@ export function render(root) {
         ${tile((st.opens / st.games.length).toFixed(1), 'Open frames a game')}
       </div>
       ${progressCard(progress(sessions), st.games.length)}
+      ${calendarCard(sessions, st)}
       ${bestsCard(personalBests(st))}
       ${tipsHTML(hints.filter((t) => t.topic !== 'spares'))}
       ${trend.html}`;
@@ -342,6 +415,7 @@ export function render(root) {
       ${linesCard(st)}
       ${accuracyCard(st.accuracy)}
       ${hitsCard(st)}
+      ${carryCard(st, db.settings.hand)}
       ${byGameCard(st.byGame)}
       ${speedCard(st)}`;
   } else if (tab === 'spares') {

@@ -1,4 +1,5 @@
-// End-of-game summary: score, how it compares, marks, and a frame-by-frame review.
+// End-of-game summary: score, how it compares, marks, and a frame-by-frame review. Any ball
+// can be opened to add or change its details (feet, arrow, pin hit…) after the game.
 
 import { db, save, findSession, findGame, newGame, unstampGoals } from '../storage.js';
 import { marks, isFreshRack, isSplit, ALL_PINS } from '../scoring.js';
@@ -6,14 +7,14 @@ import { scoreboardHTML } from '../scoreboard.js';
 import { computeStats, tips, goalText, seriesOf, scoreWithSpares } from '../stats.js';
 import { hitLabel } from '../terms.js';
 import { miniPins } from '../pins.js';
-import { esc, fmtPct, go, avg, plural } from '../util.js';
+import { esc, fmtPct, go, avg, plural, fmtSpeed } from '../util.js';
 import { topbar, icon, tipsHTML } from '../ui.js';
-import { reopenLastBall } from './game.js';
+import { reopenLastBall, ballsWithoutLine } from './game.js';
 
 // Earlier games needed before "vs your average" means anything.
 const MIN_FOR_AVERAGE = 3;
 
-function shotRow(shots, i, m) {
+function shotRow(shots, i, m, f) {
   const s = shots[i];
   const fresh = isFreshRack(shots, i);
   const left = s.standing.length;
@@ -24,7 +25,7 @@ function shotRow(shots, i, m) {
   if (s.target != null) parts.push(`Arrow ${s.target}`);
   if (s.breakpoint != null) parts.push(`Breakpoint ${s.breakpoint}`);
   if (s.hit) parts.push(hitLabel(s.hit));
-  if (s.speed != null) parts.push(`${s.speed} mph`);
+  if (s.speed != null) parts.push(fmtSpeed(s.speed, db.settings.speedUnit));
   const split = fresh && isSplit(s.standing);
   let result = fresh ? 'Strike' : 'Spare';
   if (left === 10) result = 'No pins down';
@@ -39,6 +40,7 @@ function shotRow(shots, i, m) {
         ${(s.tags?.length || s.note) ? `<div class="sub">${[...(s.tags ?? []), s.note].filter(Boolean).map(esc).join(' · ')}</div>` : ''}
         ${missed ? `<a class="link" href="#/practice/${s.standing.join('-')}">Practice the ${s.standing.join('-')} →</a>` : ''}
       </div>
+      <button type="button" class="link shot-edit" data-f="${f}" data-s="${i}" aria-label="Edit frame ${f + 1}, ball ${i + 1}">Edit</button>
     </div>`;
 }
 
@@ -55,7 +57,7 @@ export function render(root, sid, gid) {
   }
   const st = computeStats([{ ...session, games: [game] }]);
   const gameNo = session.games.indexOf(game) + 1;
-  const hints = tips(st, db.settings.hand);
+  const hints = tips(st, db.settings.hand, null, db.settings.speedUnit);
   // A record when it was bowled: higher than every finished game before it.
   const allGames = computeStats(db.sessions).games.map((x) => x.game);
   const earlier = allGames.slice(0, allGames.indexOf(game));
@@ -67,6 +69,7 @@ export function render(root, sid, gid) {
   const withSpares = scoreWithSpares(game.frames);
   // The 3-game series, once this session's first three games are done (and this is one of them).
   const series = session.games.filter((g) => g.done).indexOf(game) < 3 ? seriesOf(session) : null;
+  const missing = ballsWithoutLine(game).length;
 
   root.innerHTML = `
     ${topbar({ back: `#/session/${sid}`, title: `Game ${gameNo} summary`, sub: esc(session.center || '') })}
@@ -83,6 +86,9 @@ export function render(root, sid, gid) {
           </div>` : ''}
         <div class="sb-wrap">${scoreboardHTML(game.frames)}</div>
       </section>
+      <p class="hint center">Tap any ball to add or change its details.</p>
+      ${missing ? `
+        <button type="button" class="btn block" data-act="review" id="reviewBtn">${icon('edit', 20)} Add details · ${plural(missing, 'ball')} to fill in</button>` : ''}
       <div class="tiles four">
         <div class="tile"><div class="tv">${st.strikes}</div><div class="tl">Strikes</div></div>
         <div class="tile"><div class="tv">${st.sparesMade}/${st.spareChances}</div><div class="tl">Spares made</div></div>
@@ -104,7 +110,7 @@ export function render(root, sid, gid) {
       <div class="frames-review">
         ${game.frames.map((shots, f) => {
           const m = marks(shots);
-          return `<div class="fr"><div class="fr-n">${f + 1}</div><div class="fr-shots">${shots.map((_, i) => shotRow(shots, i, m)).join('')}</div></div>`;
+          return `<div class="fr"><div class="fr-n">${f + 1}</div><div class="fr-shots">${shots.map((_, i) => shotRow(shots, i, m, f)).join('')}</div></div>`;
         }).join('')}
       </div>
 
@@ -114,9 +120,18 @@ export function render(root, sid, gid) {
       </div>
     </div>`;
 
+  // Editing screens replace the summary in the history and come back to it with replace too,
+  // so the phone's Back button skips them.
   root.onclick = (e) => {
+    const ball = e.target.closest('[data-f]');
+    if (ball) {
+      go(`#/edit/${sid}/${gid}/${ball.dataset.f}/${ball.dataset.s}`, { replace: true });
+      return;
+    }
     const act = e.target.closest('[data-act]')?.dataset.act;
-    if (act === 'another') {
+    if (act === 'review') {
+      go(`#/review/${sid}/${gid}`, { replace: true });
+    } else if (act === 'another') {
       const open = session.games.find((g) => !g.done);
       const g = open ?? newGame();
       if (!open) session.games.push(g);

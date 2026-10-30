@@ -4,6 +4,22 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261031-0622',
+    title: 'Strike carry, your moves and a bowling calendar',
+    items: [
+      'Log just the pins during the game (quick mode is handy for this), then fill in your feet, arrow, breakpoint, pin hit, speed and how it felt from the game summary.',
+      'Tap any ball on the summary\'s scoreboard, or Edit next to it in Frame by frame, to change that ball\'s details.',
+      '"Add details" steps through every ball without feet or arrow. Each one starts from the line of the ball before it, so you only change what was different. Skip any you don\'t remember.',
+      'The pins stay as you entered them, so the score can\'t change by accident. To fix pins, use Undo last ball.',
+      'Stats → First ball: "Pocket hits: did they carry?" shows how often your pocket hits are strikes, which pins they leave, and what each leave usually means (the 10 pin: too weak; the 4 pin: too strong).',
+      'Session screen: "Your moves" spots when you moved your feet during the session and kept the new spot, and shows your strikes before and after.',
+      'Home: sessions are grouped by month, with that month\'s average. Older months fold away.',
+      'Stats → Overview: a calendar of the days you bowled, shaded by how each day compared with your average.',
+      'Game screen: more room for the pins and lane once you\'ve bowled a few games.',
+      'Ball speed is now in km/h. Prefer mph? Switch it in Settings → Ball speed; speeds you already logged are converted.',
+    ],
+  },
+  {
     version: 'v20261029-1641',
     title: 'Spare practice, goals and smarter coaching',
     items: [

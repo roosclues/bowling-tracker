@@ -3,13 +3,13 @@
 // db = {
 //   version: 1,
 //   settings: { hand: 'R'|'L', last: {center, ball, oil}, sessionsSinceBackup, lastBackup, keepAwake, haptics,
-//               skin: 'minimal'|'classic', seenVersion, quick,
+//               skin: 'minimal'|'classic', seenVersion, quick, speedUnit: 'kph'|'mph',
 //               goals: [{ key, target, reachedOn, reachedGame }] },
 //   sessions: [{ id, date, center, lane, ball, oil, notes,
 //                games: [{ id, frames: [[shot, ...] x10], done, score }] }],
 //   practice: [{ id, date, leave: [pins], made, feet, target }]   (spare practice tries)
 // }
-// shot = { standing: [pins], feet, target, breakpoint, hit, speed, tags: [], note }
+// shot = { standing: [pins], feet, target, breakpoint, hit, speed (mph), tags: [], note }
 
 import { scoreGame, knocked } from './scoring.js';
 import { normalizeDB } from './normalize.js';
@@ -233,7 +233,7 @@ function csvCell(v) {
 
 export async function exportCSV({ share = false } = {}) {
   const header = ['date', 'center', 'lane', 'ball', 'oil', 'game', 'game_score', 'frame', 'ball_in_frame',
-    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed', 'tags', 'note', 'session_notes'];
+    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed_mph', 'tags', 'note', 'session_notes'];
   const rows = [header];
   for (const s of db.sessions) {
     s.games.forEach((g, gi) => {

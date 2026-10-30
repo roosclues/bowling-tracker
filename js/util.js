@@ -56,6 +56,23 @@ export function avg(values) {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
 }
 
+// Ball speed is stored in mph and shown in the unit picked in Settings (km/h by default).
+export const SPEED_UNITS = { kph: 'km/h', mph: 'mph' };
+const KPH_PER_MPH = 1.609344;
+
+export function toSpeedUnit(mph, unit) {
+  return unit === 'mph' ? mph : mph * KPH_PER_MPH;
+}
+
+export function fromSpeedUnit(value, unit) {
+  return unit === 'mph' ? value : value / KPH_PER_MPH;
+}
+
+// 15.5 -> '24.9 km/h'
+export function fmtSpeed(mph, unit) {
+  return `${toSpeedUnit(mph, unit).toFixed(1)} ${SPEED_UNITS[unit]}`;
+}
+
 // "1 game", "3 games". Pass the plural for irregular words: plural(n, 'try', 'tries').
 export function plural(n, word, many = `${word}s`) {
   return `${n} ${n === 1 ? word : many}`;

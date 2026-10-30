@@ -1,5 +1,7 @@
 // Labels and beginner-friendly explanations shared across screens.
 
+import { MIRROR } from './spares.js';
+
 export const HITS = [
   { key: 'pocket', label: 'Pocket', desc: 'Perfect strike spot: between the 1 and 3 pins (1 and 2 if you bowl left-handed).' },
   { key: 'high', label: 'High', desc: 'Hit too much of the head pin (the 1 pin), too far to the far side. Often leaves splits.' },
@@ -54,9 +56,13 @@ export const GLOSSARY = {
     title: 'Strike',
     text: 'All 10 pins on the first ball. Scored as 10 plus the pins from your next two balls.',
   },
+  carry: {
+    title: 'Carry',
+    text: 'A pocket hit should be a strike, but sometimes pins stay up anyway. Which pins stay tells you why: a 10 pin (7 for lefties) means the ball was too weak, a 4 pin (6 for lefties) means it hooked too hard, and a single back pin on the far side (the 7, 8 or 9 for righties) is often just bad luck. Needs "Pin hit" recorded under More details.',
+  },
   speed: {
     title: 'Ball speed',
-    text: 'Many lane screens show speed in mph after each shot. Most bowlers are between 14 and 18 mph. Keeping it steady matters more than going fast.',
+    text: 'Many lane screens show speed after each shot, in km/h or mph (switch in Settings). Most bowlers are between 22 and 29 km/h (14 to 18 mph). Keeping it steady matters more than going fast.',
   },
   oil: {
     title: 'Oil pattern',
@@ -94,6 +100,29 @@ export function feetLabel(board) {
 
 export function hitLabel(key) {
   return HITS.find((h) => h.key === key)?.label ?? '';
+}
+
+// What a leave after a pocket hit usually means, written for a right-hander. Left-handers
+// leave the mirror-image pins (the 7 instead of the 10), and {away}/{toward} become the
+// side away from / toward the bowling hand. `fix` is false when there's nothing to change.
+const WEAK = { label: 'Weak hit', fix: true, text: 'The ball reached the pins with too little angle or energy. Move your feet 2 boards {away} and keep your arrow, or try a stronger ball.' };
+const STRONG = { label: 'Too strong', fix: true, text: 'The ball hooked too hard into the pocket. Move your feet 1–2 boards {toward}, or add a little speed.' };
+const LUCK = { label: 'Small miss', fix: false, text: 'A small miss in the pocket, often just bad luck. Keep your line.' };
+const CARRY = {
+  10: WEAK, '6-10': WEAK,
+  4: STRONG, '4-7': STRONG, '4-9': STRONG, '4-7-9': STRONG,
+  5: { label: 'Lost energy', fix: true, text: 'The ball lost its energy before the pins. Add a touch of speed, or roll the ball more instead of spinning it.' },
+  7: LUCK, 8: LUCK, 9: LUCK,
+};
+
+// { label, text, fix } for the pins a pocket hit left, or null for an unusual leave.
+export function carryNote(pins, hand) {
+  const key = (hand === 'L' ? pins.map((p) => MIRROR[p]).sort((a, b) => a - b) : pins).join('-');
+  const note = CARRY[key];
+  if (!note) return null;
+  const away = hand === 'L' ? 'right' : 'left';
+  const toward = hand === 'L' ? 'left' : 'right';
+  return { ...note, text: note.text.replace('{away}', away).replace('{toward}', toward) };
 }
 
 export function infoButton(term) {

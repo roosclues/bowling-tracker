@@ -1,4 +1,5 @@
-// Minimal SVG/HTML charts: a single-series line with tap/hover readout, and horizontal bars.
+// Minimal SVG/HTML charts: a single-series line with tap/hover readout, horizontal bars, and a
+// calendar of days bowled.
 
 import { esc } from './util.js';
 
@@ -109,6 +110,43 @@ export function sparkline(values, { width = 300, height = 48 } = {}) {
   return `<svg class="spark" viewBox="0 0 ${width} ${height}" role="img" aria-label="Last ${values.length} scores: ${values.join(', ')}">
     <path d="${d}" class="spark-line"/>
     <circle cx="${x(last)}" cy="${y(values[last])}" r="4" class="spark-dot"/>
+  </svg>`;
+}
+
+// Calendar of the last `weeks` weeks: one column per week (Monday on top), one cell per day.
+// `days` maps 'YYYY-MM-DD' to { level: -2..2, label, href }; level picks the diverging shade
+// (0 = about your average), label is the tooltip, href is where a tap goes. Other days are blank.
+export function calendarHeat(days, { weeks = 26, today = new Date() } = {}) {
+  const cell = 13;
+  const gap = 2;
+  const step = cell + gap;
+  const left = 16; // weekday letters
+  const top = 14;  // month names
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7) - (weeks - 1) * 7);
+  const pad = (n) => String(n).padStart(2, '0');
+  const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  let cells = '';
+  let months = '';
+  for (let w = 0; w < weeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + r);
+      if (d > today) break;
+      // Name each month in the week it starts; the first column too, unless a new month is close.
+      if (d.getDate() === 1 || (w === 0 && r === 0 && d.getDate() <= 14)) {
+        months += `<text class="c-tick" x="${left + w * step}" y="10">${d.toLocaleDateString(undefined, { month: 'short' })}</text>`;
+      }
+      const x = left + w * step;
+      const y = top + r * step;
+      const day = days.get(iso(d));
+      cells += day
+        ? `<a href="${esc(day.href)}"><rect class="cal-day cal-${day.level + 2}" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3"><title>${esc(day.label)}</title></rect></a>`
+        : `<rect class="cal-empty" x="${x}" y="${y}" width="${cell}" height="${cell}" rx="3"/>`;
+    }
+  }
+  const letters = [[0, 'M'], [2, 'W'], [4, 'F']].map(([r, t]) =>
+    `<text class="c-tick" x="0" y="${top + r * step + cell - 3}">${t}</text>`).join('');
+  return `<svg class="cal" viewBox="0 0 ${left + weeks * step} ${top + 7 * step}" role="img" aria-label="Days you bowled in the last ${weeks} weeks">
+    ${months}${letters}${cells}
   </svg>`;
 }
 
