@@ -3,13 +3,18 @@
 import { db, currentGame, backupDue } from '../storage.js';
 import { computeStats, progress, goalStatus, practiceByLeave, GOAL_WINDOW, GOAL_MIN_GAMES } from '../stats.js';
 import { goalListHTML } from './goals.js';
+import { startSession } from './session.js';
+import { showLanes } from './lanes.js';
+import { laneWarning, notesAt } from '../lanenotes.js';
 import { sparkline } from '../charts.js';
 import { icon } from '../ui.js';
+import { logLabel } from '../terms.js';
 import { APP_VERSION } from '../version.js';
 import { CHANGELOG } from '../changelog.js';
-import { esc, fmtPct, dateParts, avg, plural, todayISO } from '../util.js';
+import { esc, fmtPct, dateParts, avg, plural, todayISO, tapGuard } from '../util.js';
 
 const RECENT_GAMES = GOAL_WINDOW; // the hero average and goals look at the same games
+const once = tapGuard(1000); // one session per tap, even if the screen hasn't changed yet
 
 // "the 10 pin" or "the 3-6-10".
 const leaveName = (pins) => (pins.length === 1 ? `the ${pins[0]} pin` : `the ${pins.join('-')}`);
@@ -75,10 +80,20 @@ export function render(root) {
   const prog = progress(db.sessions);
   const change = prog && Math.round(prog.last.average) - Math.round(prog.first.average);
   const whatsNew = db.settings.seenVersion !== APP_VERSION && CHANGELOG.find((r) => r.version === APP_VERSION);
+  // Same center, ball and oil as last time: start in one tap, with the form one link away.
+  const last = db.settings.last ?? {};
+  const again = !cur && last.center;
+  // Lanes you've marked at that center, before you get a lane at the desk.
+  const warn = again && laneWarning(db.laneNotes, last.center);
+  const avoid = warn && notesAt(db.laneNotes, last.center).some((n) => n.verdict === 'avoid');
 
   const ctas = `
     ${cur ? `<a class="btn primary block big" href="#/game/${cur.session.id}/${cur.game.id}">${icon('ball')} Continue game · ${cur.game.score}</a>` : ''}
-    <a class="btn ${cur ? 'on-dark' : 'primary'} block big" href="#/new">${icon('plus')} New session</a>
+    ${again ? `
+      <button type="button" class="btn primary block big" data-act="again" id="bowlAgain">${icon('ball')} Bowl at ${esc(last.center)}</button>
+      <p class="hero-foot" id="bowlAgainInfo">${[last.ball && esc(last.ball), logLabel(db.settings.log)].filter(Boolean).join(' · ')}</p>
+      ${warn ? `<a class="hero-foot lane-warn${avoid ? ' warn' : ''}" id="laneWarn" href="#/lanes" data-act="lanes">${warn}</a>` : ''}` : ''}
+    <a class="btn ${cur || again ? 'on-dark' : 'primary'} block big" href="#/new">${icon('plus')} ${again ? 'New session…' : 'New session'}</a>
     <div class="actions-row">
       <a class="btn on-dark" href="#/practice">${icon('target', 20)} Spare practice</a>
       ${offerGoals ? `<a class="btn on-dark" href="#/goals">${icon('flag', 20)} Set a goal</a>` : ''}
@@ -151,4 +166,14 @@ export function render(root) {
       ${sessions.length ? `<h3 class="section">Sessions</h3>
       <div id="sessionMonths">${sessionGroups(sessions)}</div>` : ''}
     </div>`;
+
+  root.onclick = (e) => {
+    const act = e.target.closest('[data-act]')?.dataset.act;
+    if (act === 'lanes') {
+      e.preventDefault();
+      showLanes({ center: last.center });
+    } else if (act === 'again' && once()) {
+      startSession({ date: todayISO(), center: last.center, lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '' });
+    }
+  };
 }

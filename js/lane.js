@@ -1,5 +1,6 @@
 // Tappable top-down lane: breakpoint band (top), arrows band (middle), approach (bottom).
 // Boards are counted from the bowler's hand side, so the drawing flips for left-handers.
+// Without the breakpoint, the top band is cropped off and only feet and arrow can be set.
 
 import { arrowLabel, feetLabel, infoButton } from './terms.js';
 import { icon } from './ui.js';
@@ -84,11 +85,12 @@ const NAMES = { feet: 'Feet', target: 'Arrow', breakpoint: 'Breakpoint' };
 const TERMS = { feet: 'feet', target: 'arrows', breakpoint: 'breakpoint' };
 
 // Mounts the picker. `value` is mutated in place; onChange fires after every change.
-export function mountLane(container, { hand, value, onChange }) {
+export function mountLane(container, { hand, value, onChange, breakpoint = true }) {
+  const top = breakpoint ? 0 : ZONES[1].top;
   container.innerHTML = `
-    <svg class="lane" viewBox="0 0 ${W} ${H}" role="img" aria-label="Lane: tap to set feet, arrow and breakpoint">${laneSVG(hand)}</svg>
+    <svg class="lane" viewBox="0 ${top} ${W} ${H - top}" role="img" aria-label="Lane: tap to set feet, arrow${breakpoint ? ' and breakpoint' : ''}">${laneSVG(hand)}</svg>
     <div class="lane-readout">
-      ${['feet', 'target', 'breakpoint'].map((k) => `
+      ${(breakpoint ? ['feet', 'target', 'breakpoint'] : ['feet', 'target']).map((k) => `
         <div class="lr-row" data-k="${k}">
           <span class="lr-name">${NAMES[k]} ${infoButton(TERMS[k])}</span>
           <span class="lr-val"></span>
@@ -132,7 +134,8 @@ export function mountLane(container, { hand, value, onChange }) {
   let before = null;
   svg.addEventListener('pointerdown', (e) => {
     const p = svgPoint(e);
-    dragZone = ZONES.find((z) => p.y >= z.top && p.y < z.bottom) ?? ZONES[2];
+    const y = Math.max(top, p.y);
+    dragZone = ZONES.find((z) => y >= z.top && y < z.bottom) ?? ZONES[2];
     before = value[dragZone.key];
     set(dragZone.key, xToBoard(p.x, hand));
   });

@@ -23,6 +23,18 @@ export const TAG = {
 };
 export const TAGS = Object.values(TAG);
 
+// What the game screen asks for on each ball (Settings, the session form and the game
+// screen). Feet & arrow is the default.
+export const LOG_LEVELS = [
+  { key: 'pins', label: 'Pins only' },
+  { key: 'line', label: 'Feet & arrow' },
+  { key: 'all', label: 'Everything' },
+];
+export const logLabel = (key) => LOG_LEVELS.find((l) => l.key === key)?.label ?? '';
+
+// One-tap problems for a lane note.
+export const LANE_TAGS = ['Ball return', 'Pinsetter', 'Scoring screen', 'Oily', 'Dry', 'Sticky approach', 'Slippery approach'];
+
 export const GLOSSARY = {
   boards: {
     title: 'Boards',
@@ -58,7 +70,7 @@ export const GLOSSARY = {
   },
   carry: {
     title: 'Carry',
-    text: 'A pocket hit should be a strike, but sometimes pins stay up anyway. Which pins stay tells you why: a 10 pin (7 for lefties) means the ball was too weak, a 4 pin (6 for lefties) means it hooked too hard, and a single back pin on the far side (the 7, 8 or 9 for righties) is often just bad luck. Needs "Pin hit" recorded under More details.',
+    text: 'A pocket hit should be a strike, but sometimes pins stay up anyway. Which pins stay tells you why: a 10 pin (7 for lefties) means the ball was too weak, a 4 pin (6 for lefties) means it hooked too hard, and a single back pin on the far side (the 7, 8 or 9 for righties) is often just bad luck. Needs "Pin hit" recorded (What to log: Everything).',
   },
   speed: {
     title: 'Ball speed',
@@ -70,11 +82,15 @@ export const GLOSSARY = {
   },
   spareAim: {
     title: 'Spare aiming (3-6-9 system)',
-    text: 'Start from your strike line, keep the same arrow, and only move your feet. Find the key pin (the pin closest to you), then:\n\nPins on the far side from your bowling hand: move your feet toward your hand side, 3 boards for the 2 or 8 pin, 6 for the 4 pin and 9 for the corner pin (7 for right-handers, 10 for lefties).\n\nPins on your hand side: move your feet away from it, 4 boards for the 3 or 9 pin, 8 for the 6 pin and 12 for the corner pin, and throw it straight.\n\nThe app works these boards out for you. It\'s a starting point: if you keep missing the same way, adjust by a board or two.',
+    text: 'Start from your strike line, keep the same arrow, and only move your feet. Find the key pin (the pin closest to you), then:\n\nPins on the far side from your bowling hand: move your feet toward your hand side, 3 boards for the 2 or 8 pin, 6 for the 4 pin and 9 for the corner pin (7 for right-handers, 10 for lefties).\n\nPins on your hand side: move your feet away from it, 4 boards for the 3 or 9 pin, 8 for the 6 pin and 12 for the corner pin, and throw it straight.\n\nThe app works these boards out for you. It\'s a starting point: if you keep missing the same way, adjust by a board or two.\n\nThe app does that for you too. Once you\'ve logged a few tries at a pin with your feet and which way you missed, the aim moves up to 2 boards toward what works for you, following "move your feet the way you missed". Your makes count too: they keep the aim where you made them.',
   },
-  quick: {
-    title: 'Quick mode',
-    text: 'Saves only the pins left standing, without feet, arrow or other details. Handy in league when there is no time between shots. Your score and spare stats still count; line stats only use balls with a line recorded.',
+  laneNotes: {
+    title: 'Lane notes',
+    text: 'Your own notes about lanes at a bowling center: mark a lane Avoid or Good, tap what was wrong (ball return, pinsetter, scoring screen, oil, approach), and add a few words. Next time, Home and the session form remind you, so you can ask the desk for a different lane.',
+  },
+  log: {
+    title: 'What to log',
+    text: 'Pins only: just the pins left standing. Quickest, for busy league nights. Your score and spare stats still count; line stats only use balls with a line recorded.\n\nFeet & arrow: the pins, plus the board your feet started on and the arrow the ball rolled over. They carry over from your last ball, so you only change them when you move.\n\nEverything: also the breakpoint, pin hit, ball speed and how it felt, for the stats that use them.\n\nAnything you skip can be filled in from the game summary afterwards.',
   },
   followMiss: {
     title: 'Move your feet the way you missed',

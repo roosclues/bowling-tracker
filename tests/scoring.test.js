@@ -2,10 +2,12 @@ import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/
 import { normalizeDB } from '../js/normalize.js';
 import {
   computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
-  scoreWithSpares, sessionMoves,
+  scoreWithSpares, sessionMoves, spareAimFor,
 } from '../js/stats.js';
 import { carryNote } from '../js/terms.js';
-import { spareAim, keyPin } from '../js/spares.js';
+import { spareAim, keyPin, adjustAim, aimText } from '../js/spares.js';
+import { findNote, saveNote, notesAt, laneWarning } from '../js/lanenotes.js';
+import { leaveRead, ballRead, gameRead, coachContext, answer, brief, questions } from '../js/coach.js';
 import { plural } from '../js/util.js';
 
 // Build frames from a list of pin counts, e.g. [10, 7, 3, ...].
@@ -354,7 +356,7 @@ test('restore drops a goal credit pointing at a missing game', () => {
   eq(db.settings.goals.map((g) => [g.key, g.reachedGame]), [['spares', 'g1'], ['average', null]]);
 });
 
-test('restore keeps valid practice tries, goals and quick mode', () => {
+test('restore keeps valid practice tries, goals and what to log', () => {
   const db = normalizeDB({
     sessions: [],
     practice: [{ leave: [10, 10, 11], made: true, feet: 32 }, { leave: [] }, 'x'],
@@ -362,7 +364,123 @@ test('restore keeps valid practice tries, goals and quick mode', () => {
   });
   eq(db.practice.map((p) => [p.leave, p.made, p.feet, p.target]), [[[10], true, 32, null]]);
   eq(db.settings.goals.map((g) => [g.key, g.target, g.reachedOn]), [['spares', 60, null]]);
-  eq([db.settings.quick, normalizeDB({ sessions: [] }).settings.quick], [true, false]);
+  // Old quick mode on → Pins only; off or missing → Feet & arrow. A saved level is kept, a bad one isn't.
+  const log = (settings) => normalizeDB({ sessions: [], settings }).settings.log;
+  eq([db.settings.log, log({ quick: false }), log(undefined), log({ log: 'all' }), log({ log: 'nope', quick: true })],
+    ['pins', 'line', 'line', 'all', 'pins']);
+});
+
+test('the spare aim moves toward what works for you', () => {
+  const aim = spareAim([10], { feet: 20, target: 10 }, 'R'); // feet 32
+  const miss = (way, offset = 0) => ({ offset, made: false, miss: way });
+  const made = (offset = 0) => ({ offset, made: true, miss: null });
+  const four = (t) => [t, t, t, t];
+  // Missing left: move the feet left, a higher board for a right-hander, a lower one for a lefty.
+  eq(adjustAim(aim, four(miss('left')), 'R').feet, 33);
+  const lefty = spareAim([7], { feet: 20, target: 10 }, 'L');
+  eq(adjustAim(lefty, four(miss('left')), 'L').feet, lefty.feet - 1);
+  // Makes 2 boards from the aim pull it there; never more than 2 boards.
+  eq(adjustAim(aim, four(made(2)), 'R').feet, 34);
+  eq(adjustAim(aim, four(made(5)), 'R').feet, 34);
+  // Misses both ways, or too few tries that say something, leave it alone.
+  eq(adjustAim(aim, [miss('left'), miss('right'), miss('left'), miss('right')], 'R'), aim);
+  eq(adjustAim(aim, [miss('left'), miss('left'), miss('left'), miss(null), { offset: null, made: true }], 'R'), aim);
+  // Only the last 8 count, so old misses are forgotten once you make it.
+  eq(adjustAim(aim, [...Array(8).fill(miss('right')), ...Array(8).fill(made())], 'R'), aim);
+  const moved = adjustAim(aim, [made(), miss('left'), miss('left'), miss('left')], 'R');
+  eq([moved.feet, moved.base, moved.learned], [33, 32, { n: 4, made: 1, left: 3, right: 0, dir: 'left' }]);
+  const why = aimText(moved);
+  if (!why.includes('(board 20 → 32)') || !why.includes('Moved 1 board left from there (board 32 → 33), from your last 4 tries at this pin: 1 made, 3 missed left.')) throw new Error(why);
+});
+
+test('spareAimFor learns from game spares and practice', () => {
+  // The 10 pin left four times from feet 20, and the spare missed left from the 3-6-9 board 32.
+  const frame = [{ standing: [10], feet: 20, target: 10, tags: [] }, { standing: [10], feet: 32, target: 10, tags: ['Missed left'] }];
+  const sessions = [{ date: '2026-10-01', center: 'X', games: [{ frames: [frame, frame, frame, frame, [], [], [], [], [], []], done: false }] }];
+  eq(spareAimFor([10], sessions, [], 'R').feet, 33);
+  // The 6-10's key pin is the 6, so tries at the 10 pin don't move its aim.
+  eq(spareAimFor([6, 10], sessions, [], 'R').learned, undefined);
+  // Practice tries count too: four makes from board 34 with no games.
+  const practice = Array.from({ length: 4 }, () => ({ date: '2026-10-02', leave: [10], made: true, miss: null, feet: 34, target: 10 }));
+  eq(spareAimFor([10], [], practice, 'R').feet, 34);
+});
+
+test('lane notes: one per center and lane, known problems only', () => {
+  const db = normalizeDB({
+    sessions: [],
+    practice: [{ leave: [10], made: true, miss: 'left' }, { leave: [10], miss: 'up' }, { leave: [10], miss: 'right' }],
+    laneNotes: [
+      { center: 'Strike Zone', lane: '07', verdict: 'avoid', tags: ['Ball return', 'Haunted'], text: 'jams', date: '2026-10-01' },
+      { center: 'strike zone ', lane: '7', verdict: 'good', tags: ['Oily'], text: 'fixed', date: '2026-10-20' },
+      { center: 'Strike Zone', lane: '  ', verdict: 'avoid' },
+      { center: 'Strike Zone', lane: '12', verdict: 'maybe', tags: 'Oily' },
+      'x',
+    ],
+  });
+  eq(db.practice.map((p) => p.miss), [null, null, 'right']);
+  eq(db.laneNotes.map((n) => [n.center, n.lane, n.verdict, n.tags, n.text]), [['strike zone', '7', 'good', ['Oily'], 'fixed'], ['Strike Zone', '12', null, [], '']]);
+  eq(findNote(db.laneNotes, 'STRIKE ZONE', '007')?.text, 'fixed');
+  eq(findNote(db.laneNotes, 'Strike Zone', ''), null);
+  // Saving a lane that has a note replaces it; Avoid lanes come first.
+  saveNote(db.laneNotes, { center: 'Strike Zone', lane: '12', verdict: 'avoid', tags: ['Pinsetter'], text: ' stuck ' });
+  saveNote(db.laneNotes, { center: 'Strike Zone', lane: '3', verdict: 'avoid' });
+  eq(db.laneNotes.length, 3);
+  eq(notesAt(db.laneNotes, 'Strike Zone').map((n) => n.lane), ['3', '12', '7']);
+  eq(findNote(db.laneNotes, 'Strike Zone', '12').text, 'stuck');
+  eq(laneWarning(db.laneNotes, 'strike zone'), 'Avoid lanes 3, 12 here · Good: 7');
+  eq(laneWarning(db.laneNotes, 'Elsewhere'), '');
+});
+
+test('the coach reads a leave as a light or high hit', () => {
+  const read = (keys, hand) => keys.map((k) => leaveRead(k.split('-').map(Number), hand));
+  eq(read(['2-4-5', '1-2-4-7', '2-8', '4-6', '4-9', '7-10', '1-3-6-10', '10', '6-10', '5'], 'R'),
+    ['light', 'light', 'light', 'high', 'high', 'high', 'high', null, null, null]);
+  // Lefties leave the mirror image: the 3-5-6 is their light leave.
+  eq(read(['3-5-6', '1-3-6-10', '4-6', '7'], 'L'), ['light', 'light', 'high', null]);
+  // A recorded pin hit counts first, then a missed-arrow tag, then the leave.
+  eq(ballRead({ standing: [2, 4, 5], hit: 'high', tags: [] }, 'R'), 'high');
+  eq(ballRead({ standing: [2, 4, 5], tags: ['Missed left'] }, 'R'), 'high');
+  eq(ballRead({ standing: [2, 4, 5], tags: ['Missed left'] }, 'L'), 'light');
+  eq(ballRead({ standing: [], tags: [] }, 'R'), 'strike');
+});
+
+test('the coach reads the game you are in', () => {
+  const strike = [{ standing: [], feet: 20, target: 10 }];
+  const light = [{ standing: [2, 4, 5], feet: 20, target: 10 }, { standing: [] }];
+  const high = [{ standing: [4, 6], feet: 20, target: 10 }, { standing: [] }];
+  const one = (frames, hand = 'R', tags = []) => {
+    const db = normalizeDB({ sessions: [{ id: 's', date: '2026-10-01', games: [{ id: 'g', frames }] }], settings: { hand } });
+    db.sessions[0].games[0].frames.forEach((f) => f[0] && (f[0].tags = tags));
+    return gameRead(db.sessions[0].games[0], db.sessions[0], db);
+  };
+  // Two light hits: move the feet 2 boards toward the hand side, a lower board for either hand.
+  const r = one([light, light]);
+  eq([r.moves[0].title, r.moves[0].text.includes('(feet 20 → 18, keep arrow 10)')], ['Hitting light', true]);
+  const l = one([[{ ...light[0], standing: [3, 5, 6] }, light[1]], [{ ...light[0], standing: [3, 5, 6] }, light[1]]], 'L');
+  eq([l.moves[0].text.includes('2 boards left'), l.moves[0].text.includes('20 → 18')], [true, true]);
+  // A missed-left tag on those same balls says high instead: feet the other way.
+  eq(one([light, light], 'R', ['Missed left']).moves[0].text.includes('(feet 20 → 22, keep arrow 10)'), true);
+  // Striking, then high hits: the lane is changing, so move feet 2 and arrow 1.
+  const t = one([strike, strike, strike, high, high]);
+  eq([t.moves[0].title, t.moves[0].text.includes('(feet 20 → 22, arrow 10 → 11)')], ['The lane is changing', true]);
+  eq(one([strike, strike, strike]).moves[0].title, 'Keep doing that');
+  // One ball is not a pattern: no move, just where the game stands (a spare counts once the next ball is in).
+  const c = one([light]);
+  eq([c.moves.length, c.summary.title], [0, 'Through 1 frame: 0']);
+});
+
+test('the coach knows when it is: before, during or after', () => {
+  const perfect = [...Array(9).fill([{ standing: [] }]), [{ standing: [] }, { standing: [] }, { standing: [] }]];
+  const done = normalizeDB({ sessions: [{ id: 's', date: '2026-11-04', center: 'X', games: [{ id: 'g', frames: perfect }] }], settings: { last: { center: 'X' } } });
+  eq(coachContext(done, '2026-11-04').when, 'after');
+  eq([coachContext(done, '2026-11-05').when, coachContext(done, '2026-11-05').center], ['before', 'X']);
+  const open = normalizeDB({ sessions: [{ id: 's', date: '2026-11-04', games: [{ id: 'g', frames: perfect }, { id: 'h', frames: [] }] }] });
+  eq(coachContext(open, '2026-11-04').game.id, 'h');
+  // With nothing logged: the basics, and questions that don't need data.
+  const empty = normalizeDB({ sessions: [] });
+  eq(brief(empty, '')[0].title, 'Welcome! Let\'s find your line');
+  eq(questions(empty, coachContext(empty)).map((q) => q.key), ['speed', 'findline', 'arrows']);
+  eq(answer('speed', empty, coachContext(empty))[0].title, 'Log a few speeds first');
 });
 
 const failed = results.filter((r) => !r.ok);

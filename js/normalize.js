@@ -4,7 +4,8 @@
 
 import { frameDone, pinsBefore, scoreGame, gameDone, ALL_PINS } from './scoring.js';
 import { GOAL_TYPES } from './stats.js';
-import { HITS } from './terms.js';
+import { HITS, LOG_LEVELS, LANE_TAGS } from './terms.js';
+import { laneKey } from './lanenotes.js';
 import { uid, todayISO } from './util.js';
 
 const ID = /^\w{1,40}$/;
@@ -79,19 +80,51 @@ function normSession(raw, seen) {
   };
 }
 
-// One spare-practice try: the leave you tried, whether you made it, and your line.
+// One spare-practice try: the leave you tried, whether you made it (or which way it missed),
+// and your line.
 function normAttempt(raw, seen) {
   if (!isObj(raw)) return null;
   const leave = [...new Set(Array.isArray(raw.leave) ? raw.leave : [])].filter((p) => ALL_PINS.includes(p)).sort((a, b) => a - b);
   if (!leave.length) return null;
+  const made = raw.made === true;
   return {
     id: freshId(raw.id, seen),
     date: date(raw.date) ?? todayISO(),
     leave,
-    made: raw.made === true,
+    made,
+    miss: !made && ['left', 'right'].includes(raw.miss) ? raw.miss : null,
     feet: int(raw.feet, 1, 39),
     target: int(raw.target, 1, 39),
   };
+}
+
+// A lane note. Lane notes without a lane are dropped, and the newest note wins when a
+// center and lane have more than one.
+function normLaneNote(raw, seen) {
+  if (!isObj(raw)) return null;
+  const lane = text(raw.lane, 10).trim();
+  if (!lane) return null;
+  const tags = Array.isArray(raw.tags) ? raw.tags : [];
+  return {
+    id: freshId(raw.id, seen),
+    center: text(raw.center, 80).trim(),
+    lane,
+    verdict: ['avoid', 'good'].includes(raw.verdict) ? raw.verdict : null,
+    tags: LANE_TAGS.filter((t) => tags.includes(t)),
+    text: text(raw.text, 200),
+    date: date(raw.date) ?? todayISO(),
+  };
+}
+
+function normLaneNotes(raw, seen) {
+  const byLane = new Map();
+  for (const x of Array.isArray(raw) ? raw : []) {
+    const note = normLaneNote(x, seen);
+    if (!note) continue;
+    const k = laneKey(note.center, note.lane);
+    if (!byLane.has(k) || note.date >= byLane.get(k).date) byLane.set(k, note);
+  }
+  return [...byLane.values()];
 }
 
 // `gameIds` are the games that exist: a goal can't stay credited to a game that's gone.
@@ -125,11 +158,13 @@ export function normalizeDB(data) {
       haptics: s.haptics !== false,
       skin: SKINS.includes(s.skin) ? s.skin : SKINS[0],
       seenVersion: typeof s.seenVersion === 'string' && /^v[\w-]{1,30}$/.test(s.seenVersion) ? s.seenVersion : null,
-      quick: s.quick === true,
+      // Older versions had quick mode on or off: on becomes Pins only, off the Feet & arrow default.
+      log: LOG_LEVELS.some((l) => l.key === s.log) ? s.log : s.quick === true ? 'pins' : 'line',
       speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
       goals: normGoals(s.goals, gameIds),
     },
     sessions,
     practice: (Array.isArray(data.practice) ? data.practice : []).slice(-20000).map((x) => normAttempt(x, seen)).filter(Boolean),
+    laneNotes: normLaneNotes(data.laneNotes, seen),
   };
 }

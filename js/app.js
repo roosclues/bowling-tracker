@@ -16,6 +16,8 @@ import * as help from './views/help.js';
 import * as changelog from './views/changelog.js';
 import * as practice from './views/practice.js';
 import * as goals from './views/goals.js';
+import * as lanes from './views/lanes.js';
+import * as coach from './views/coach.js';
 
 const root = document.getElementById('view');
 
@@ -31,6 +33,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applySkin)
 const TABS = [
   ['home', '#/', 'home', 'Home'],
   ['bowl', '#/bowl', 'ball', 'Bowl'],
+  ['coach', '#/coach', 'coach', 'Coach'],
   ['stats', '#/stats', 'stats', 'Stats'],
   ['help', '#/help', 'help', 'Help'],
   ['settings', '#/settings', 'settings', 'Settings'],
@@ -53,6 +56,8 @@ const routes = [
   [/^#\/changelog$/, changelog.render, 'settings'],
   [/^#\/practice(?:\/([\d-]+))?$/, practice.render, 'bowl'],
   [/^#\/goals$/, goals.render, 'home'],
+  [/^#\/lanes$/, lanes.render, 'home'],
+  [/^#\/coach$/, coach.render, 'coach'],
   [/^#\/bowl$/, () => {
     const cur = currentGame();
     go(cur ? `#/game/${cur.session.id}/${cur.game.id}` : '#/new', { replace: true });
@@ -85,6 +90,8 @@ function route() {
       </div></div>`;
   }
   document.body.classList.toggle('has-actionbar', !!root.querySelector('.actionbar'));
+  // No tabs while entering balls: the pins and Save get the room. The top bar's back arrow stays.
+  document.body.classList.toggle('in-game', /^#\/(game|edit|review)\//.test(hash));
   keepAwake(hash.startsWith('#/game/'));
   if (hash !== lastHash) window.scrollTo({ top: 0 });
   lastHash = hash;

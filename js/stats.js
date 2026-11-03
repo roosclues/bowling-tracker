@@ -1,7 +1,7 @@
 // Stat calculations over sessions. Pure functions, no DOM.
 
 import { pinsBefore, isFreshRack, isSplit, frameDone, scoreGame } from './scoring.js';
-import { spareAim } from './spares.js';
+import { spareAim, keyPin, adjustAim } from './spares.js';
 import { TAG, carryNote } from './terms.js';
 import { avg, pct, plural, toSpeedUnit, SPEED_UNITS } from './util.js';
 
@@ -293,6 +293,35 @@ export function strikeLineFor(sessions) {
   return strikeLine(computeStats(sessions));
 }
 
+const missOf = (tags) => (tags.includes(TAG.missedLeft) ? 'left' : tags.includes(TAG.missedRight) ? 'right' : null);
+
+// Your spare tries at leaves with key pin `pin`, oldest first, for adjustAim: the feet you used
+// compared with the 3-6-9 feet for that try. A game spare starts from that frame's first-ball
+// feet (your strike line that day, at that center); practice from your usual strike line.
+function spareTries(sessions, practice, pin, hand, line) {
+  const out = [];
+  for (const x of collectShots(sessions)) {
+    if (!x.fresh || !x.shot.standing.length || !x.next || keyPin(x.shot.standing, hand) !== pin) continue;
+    const from = x.shot.feet != null ? { feet: x.shot.feet, target: x.shot.target } : line;
+    const aim = spareAim(x.shot.standing, from, hand);
+    out.push({ date: x.session.date, offset: x.next.feet == null ? null : x.next.feet - aim.feet, made: !x.next.standing.length, miss: missOf(x.next.tags) });
+  }
+  for (const p of practice) {
+    if (keyPin(p.leave, hand) !== pin) continue;
+    const aim = spareAim(p.leave, line, hand);
+    out.push({ date: p.date, offset: p.feet == null ? null : p.feet - aim.feet, made: p.made, miss: p.miss });
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// The spare aim for `leave`: the 3-6-9 system from your usual strike line, moved a board or
+// two by your own tries. The game screen, Stats and Spare practice all use this.
+export function spareAimFor(leave, sessions, practice, hand) {
+  const line = strikeLineFor(sessions);
+  const aim = spareAim(leave, line, hand);
+  return aim && adjustAim(aim, spareTries(sessions, practice, aim.pin, hand, line), hand);
+}
+
 // The score if every missed spare had been made. Open frames get a spare instead; an open
 // 10th frame also gets its extra ball, repeating the first ball there.
 export function scoreWithSpares(frames) {
@@ -457,7 +486,7 @@ export function goalsCrossed(sessions, goals, game) {
 // ---------- Coaching tips ----------
 
 // The best-ranked line with at least `min` first balls, or null.
-function bestCombo(stats, min) {
+export function bestCombo(stats, min) {
   return stats.combos.find((c) => c.n >= min) ?? null;
 }
 
@@ -465,7 +494,7 @@ function bestCombo(stats, min) {
 // basis says how much data the hint stands on, topic is 'spares' or 'line' (which Stats tab
 // it belongs on), and link is an optional screen to act on it. Pass `sessions` to also
 // compare bowling centers. `speedUnit` is 'kph' or 'mph'.
-export function tips(stats, hand, sessions = null, speedUnit = 'kph') {
+export function tips(stats, hand, sessions = null, speedUnit = 'kph', aimOf = null) {
   const out = [];
   const handSide = hand === 'L' ? 'left' : 'right';
   const otherSide = hand === 'L' ? 'right' : 'left';
@@ -509,11 +538,11 @@ export function tips(stats, hand, sessions = null, speedUnit = 'kph') {
     .sort((a, b) => a.made / a.chances - b.made / b.chances || b.chances - a.chances)[0];
   if (missed) {
     const name = missed.standing.join('-');
-    const aim = spareAim(missed.standing, line, hand);
+    const aim = aimOf?.(missed.standing) ?? spareAim(missed.standing, line, hand);
     out.push({
       topic: 'spares',
       title: `The ${name} keeps getting away`,
-      text: `You picked it up ${missed.made} of ${missed.chances} times. Try feet on board ${aim.feet} and the board ${aim.target} arrow (the 3-6-9 system), and work on it in Spare practice.`,
+      text: `You picked it up ${missed.made} of ${missed.chances} times. Try feet on board ${aim.feet} and the board ${aim.target} arrow (${aim.learned ? 'your spare aim, adjusted to your tries' : 'the 3-6-9 system'}), and work on it in Spare practice.`,
       basis: `From ${plural(missed.chances, 'try', 'tries')} at this leave.`,
       link: { href: `#/practice/${name}`, label: `Practice the ${name}` },
     });
@@ -530,7 +559,7 @@ export function tips(stats, hand, sessions = null, speedUnit = 'kph') {
     out.push({
       topic: 'line',
       title: 'A lot of splits',
-      text: `${pct(stats.splits, stats.firstBalls)}% of your first balls leave a split. Splits mostly come from high hits: try moving your feet 1–2 boards ${otherSide}, or slowing the ball down a little.`,
+      text: `${pct(stats.splits, stats.firstBalls)}% of your first balls leave a split. Splits mostly come from high hits: try moving your feet 1–2 boards ${otherSide}, or adding a touch of speed so the ball hooks later.`,
       basis: `From ${plural(stats.firstBalls, 'first ball')}.`,
     });
   }

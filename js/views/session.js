@@ -1,11 +1,14 @@
-// Session setup form and session detail (games, how the session went, tips, feet moves).
+// Session setup form and session detail (games, how the session went, tips, feet moves,
+// your note on the lane). The form shows your lane notes as you type the center and lane.
 
 import { db, save, findSession, newGame, requestPersist, unstampGoals } from '../storage.js';
-import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN } from '../stats.js';
+import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN, spareAimFor } from '../stats.js';
 import { infoButton } from '../terms.js';
-import { topbar, icon, tipsHTML } from '../ui.js';
+import { topbar, icon, tipsHTML, logChips } from '../ui.js';
 import { esc, uid, todayISO, fmtDate, go, toast, avg, fmtPct, plural } from '../util.js';
 import { showStatsFor } from './stats.js';
+import { showLanes, laneNoteRow } from './lanes.js';
+import { findNote, notesAt, noteSummary, laneWarning } from '../lanenotes.js';
 
 const OILS = ['Unknown', 'House shot', 'Sport / league pattern', 'Dry lanes', 'Oily lanes'];
 
@@ -18,19 +21,31 @@ function distinct(field) {
   return [...seen];
 }
 
+// Starts a session with its first game and opens that game. Used by the form and by Home's
+// one-tap "Bowl at …", which repeats the last center, ball and oil.
+export function startSession(fields) {
+  db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
+  const session = { id: uid(), ...fields, games: [newGame()] };
+  db.sessions.push(session);
+  db.sessions.sort((a, b) => a.date.localeCompare(b.date));
+  db.settings.sessionsSinceBackup = (db.settings.sessionsSinceBackup || 0) + 1;
+  save();
+  requestPersist();
+  go(`#/game/${session.id}/${session.games[0].id}`);
+}
+
+// A new session shows only center, lane and what to log; the rest keeps last time's values
+// under "More details". Editing a session opens everything.
 export function renderForm(root, sid) {
   const existing = sid ? findSession(sid) : null;
   const last = db.settings.last || {};
   const s = existing ?? { date: todayISO(), center: last.center ?? '', lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '' };
+  let level = db.settings.log;
 
   root.innerHTML = `
     ${topbar({ back: existing ? `#/session/${existing.id}` : '#/', title: existing ? 'Edit session' : 'New session' })}
     <form class="page form" id="sessionForm" autocomplete="off">
       <div class="card">
-      <div class="field">
-        <label for="date">Date</label>
-        <input id="date" name="date" type="date" required value="${esc(s.date)}">
-      </div>
       <div class="field">
         <label for="center">Bowling center</label>
         <input id="center" name="center" list="centers" placeholder="e.g. Strike Zone Lanes" value="${esc(s.center)}">
@@ -39,45 +54,79 @@ export function renderForm(root, sid) {
       <div class="field">
         <label for="lane">Lane number</label>
         <input id="lane" name="lane" inputmode="numeric" placeholder="e.g. 12" value="${esc(s.lane)}">
+        <p class="hint lane-hint" id="laneHint" aria-live="polite" hidden></p>
       </div>
+      ${existing ? '' : `
       <div class="field">
-        <label for="ball">Ball</label>
-        <input id="ball" name="ball" list="balls" placeholder="e.g. House ball 12 lb" value="${esc(s.ball)}">
-        <datalist id="balls">${distinct('ball').map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+        <label>What to log ${infoButton('log')}</label>
+        <div class="seg full" id="logLevel">${logChips(level)}</div>
+        <p class="hint">Your score and spares always count. Feet and arrow carry over from ball to ball, so you only change them when you move. You can switch during the game.</p>
+      </div>`}
       </div>
-      <div class="field">
-        <label for="oil">Oil pattern ${infoButton('oil')}</label>
-        <select id="oil" name="oil">${OILS.map((o) => `<option${o === s.oil ? ' selected' : ''}>${o}</option>`).join('')}</select>
-      </div>
-      <div class="field">
-        <label for="notes">Notes</label>
-        <textarea id="notes" name="notes" rows="2" placeholder="How you felt, what you're working on…">${esc(s.notes)}</textarea>
-      </div>
-      </div>
+      <details class="card more" id="sessionMore"${existing ? ' open' : ''}>
+        <summary>More details <small>date, ball, oil, notes</small></summary>
+        <div class="field">
+          <label for="date">Date</label>
+          <input id="date" name="date" type="date" value="${esc(s.date)}">
+        </div>
+        <div class="field">
+          <label for="ball">Ball</label>
+          <input id="ball" name="ball" list="balls" placeholder="e.g. House ball 12 lb" value="${esc(s.ball)}">
+          <datalist id="balls">${distinct('ball').map((c) => `<option value="${esc(c)}">`).join('')}</datalist>
+        </div>
+        <div class="field">
+          <label for="oil">Oil pattern ${infoButton('oil')}</label>
+          <select id="oil" name="oil">${OILS.map((o) => `<option${o === s.oil ? ' selected' : ''}>${o}</option>`).join('')}</select>
+        </div>
+        <div class="field">
+          <label for="notes">Notes</label>
+          <textarea id="notes" name="notes" rows="2" placeholder="How you felt, what you're working on…">${esc(s.notes)}</textarea>
+        </div>
+      </details>
       <button class="btn primary block big" type="submit">${existing ? `${icon('check')} Save` : `${icon('ball')} Start bowling`}</button>
     </form>`;
+
+  // Your note on the lane you type, or the lanes you marked at the center: while you're at
+  // the desk you can still ask for another lane.
+  const centerInput = root.querySelector('#center');
+  const laneInput = root.querySelector('#lane');
+  const hint = root.querySelector('#laneHint');
+  const showLaneHint = () => {
+    const note = findNote(db.laneNotes, centerInput.value, laneInput.value);
+    const warn = note ? '' : laneWarning(db.laneNotes, centerInput.value);
+    const avoid = note ? note.verdict === 'avoid' : notesAt(db.laneNotes, centerInput.value).some((n) => n.verdict === 'avoid');
+    hint.innerHTML = note ? `Your note on lane ${esc(note.lane)}: ${noteSummary(note)}` : warn;
+    hint.classList.toggle('warn', avoid);
+    hint.hidden = !hint.innerHTML;
+  };
+  centerInput.addEventListener('input', showLaneHint);
+  laneInput.addEventListener('input', showLaneHint);
+  showLaneHint();
+
+  root.querySelector('#logLevel')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-log]');
+    if (!btn) return;
+    level = btn.dataset.log;
+    e.currentTarget.innerHTML = logChips(level);
+  });
 
   root.querySelector('#sessionForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = Object.fromEntries(new FormData(e.target));
+    // The date sits in the folded section, so an emptied box can't block the form: it means today.
     const fields = {
-      date: f.date, center: f.center.trim(), lane: f.lane.trim(),
+      date: f.date || todayISO(), center: f.center.trim(), lane: f.lane.trim(),
       ball: f.ball.trim(), oil: f.oil, notes: f.notes.trim(),
     };
-    db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
     if (existing) {
+      db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
       Object.assign(existing, fields);
       save();
       go(`#/session/${existing.id}`);
       return;
     }
-    const session = { id: uid(), ...fields, games: [newGame()] };
-    db.sessions.push(session);
-    db.sessions.sort((a, b) => a.date.localeCompare(b.date));
-    db.settings.sessionsSinceBackup = (db.settings.sessionsSinceBackup || 0) + 1;
-    save();
-    requestPersist();
-    go(`#/game/${session.id}/${session.games[0].id}`);
+    db.settings.log = level;
+    startSession(fields);
   });
 }
 
@@ -140,8 +189,9 @@ export function renderDetail(root, sid) {
         <div class="tile"><div class="tv">${st.firstBallAvg === null ? '–' : st.firstBallAvg.toFixed(1)}</div><div class="tl">1st-ball pins</div></div>
       </div>
       <p class="meta">${[s.lane && `Lane ${esc(s.lane)}`, s.ball && esc(s.ball), s.oil && s.oil !== 'Unknown' && esc(s.oil)].filter(Boolean).join(' · ')}</p>
+      ${laneNoteRow(s)}
       ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ''}
-      ${tipsHTML(tips(st, db.settings.hand, null, db.settings.speedUnit))}
+      ${tipsHTML(tips(st, db.settings.hand, null, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand)))}
       ${movesCard(sessionMoves(s), db.settings.hand)}
       ${s.center && done.length ? `<button type="button" class="link" data-act="stats" id="centerStats">See all your stats at ${esc(s.center)} →</button>` : ''}
       <ul class="list">
@@ -173,6 +223,8 @@ export function renderDetail(root, sid) {
       go(`#/game/${s.id}/${g.id}`);
     } else if (act === 'stats') {
       showStatsFor({ center: s.center });
+    } else if (act === 'lanenote') {
+      showLanes({ center: s.center, lane: s.lane, sid: s.id, back: `#/session/${s.id}` });
     } else if (act === 'delete') {
       if (!confirm(`Delete this session and its ${plural(s.games.length, 'game')}? This cannot be undone.`)) return;
       s.games.forEach(unstampGoals);

@@ -1,6 +1,6 @@
 // Shared UI pieces: line icons, the screen top bar, coaching tips, spare aim, label/value rows.
 
-import { infoButton } from './terms.js';
+import { infoButton, LOG_LEVELS } from './terms.js';
 import { esc } from './util.js';
 
 const PATHS = {
@@ -25,6 +25,7 @@ const PATHS = {
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none"/>',
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+  coach: '<path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-8l-4.5 3.5v-3.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M8 9h8M8 12h5"/>',
   refresh: '<path d="M19.5 11A7.5 7.5 0 0 0 6 6.5L4.5 8"/><path d="M4.5 4v4h4"/><path d="M4.5 13A7.5 7.5 0 0 0 18 17.5l1.5-1.5"/><path d="M19.5 20v-4h-4"/>',
 };
 
@@ -41,9 +42,14 @@ export function tipsHTML(list) {
 }
 
 // The suggested spare line from spares.spareAim(). `use` adds a button that puts it on the lane.
-export function aimHTML(aim, { label = 'Spare aim', use = false, info = true, id = 'aim' } = {}) {
+export function aimHTML(aim, { label = aim.learned ? 'Your spare aim' : 'Spare aim', use = false, info = true, id = 'aim' } = {}) {
   return `<p class="aim" id="${id}">${icon('target', 18)}<span>${label}: feet <b>${aim.feet}</b> · arrow <b>${aim.target}</b></span>${
     info ? infoButton('spareAim') : ''}${use ? '<button type="button" class="link" data-act="aim">Use</button>' : ''}</p>`;
+}
+
+// The "What to log" chips, with `current` (a LOG_LEVELS key) picked.
+export function logChips(current) {
+  return LOG_LEVELS.map((l) => `<button type="button" class="chip${current === l.key ? ' on' : ''}" data-log="${l.key}" aria-pressed="${current === l.key}">${l.label}</button>`).join('');
 }
 
 // One label/value row of a `.kv` list. `note` sits next to the value, `side` on the right.

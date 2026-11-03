@@ -1,15 +1,17 @@
 // End-of-game summary: score, how it compares, marks, and a frame-by-frame review. Any ball
-// can be opened to add or change its details (feet, arrow, pin hit…) after the game.
+// can be opened to add or change its details (feet, arrow, pin hit…) after the game. Your
+// note on the lane sits above Another game, to add one while it's fresh.
 
 import { db, save, findSession, findGame, newGame, unstampGoals } from '../storage.js';
 import { marks, isFreshRack, isSplit, ALL_PINS } from '../scoring.js';
 import { scoreboardHTML } from '../scoreboard.js';
-import { computeStats, tips, goalText, seriesOf, scoreWithSpares } from '../stats.js';
+import { computeStats, tips, goalText, seriesOf, scoreWithSpares, spareAimFor } from '../stats.js';
 import { hitLabel } from '../terms.js';
 import { miniPins } from '../pins.js';
 import { esc, fmtPct, go, avg, plural, fmtSpeed } from '../util.js';
 import { topbar, icon, tipsHTML } from '../ui.js';
 import { reopenLastBall, ballsWithoutLine } from './game.js';
+import { showLanes, laneNoteRow } from './lanes.js';
 
 // Earlier games needed before "vs your average" means anything.
 const MIN_FOR_AVERAGE = 3;
@@ -57,7 +59,7 @@ export function render(root, sid, gid) {
   }
   const st = computeStats([{ ...session, games: [game] }]);
   const gameNo = session.games.indexOf(game) + 1;
-  const hints = tips(st, db.settings.hand, null, db.settings.speedUnit);
+  const hints = tips(st, db.settings.hand, null, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand));
   // A record when it was bowled: higher than every finished game before it.
   const allGames = computeStats(db.sessions).games.map((x) => x.game);
   const earlier = allGames.slice(0, allGames.indexOf(game));
@@ -101,6 +103,7 @@ export function render(root, sid, gid) {
 
       ${tipsHTML(hints)}
 
+      ${laneNoteRow(session)}
       <div class="actions-row">
         <button class="btn primary" data-act="another">${icon('plus')} Another game</button>
         <a class="btn" href="#/">Done for today</a>
@@ -131,6 +134,8 @@ export function render(root, sid, gid) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'review') {
       go(`#/review/${sid}/${gid}`, { replace: true });
+    } else if (act === 'lanenote') {
+      showLanes({ center: session.center, lane: session.lane, sid, back: `#/summary/${sid}/${gid}` });
     } else if (act === 'another') {
       const open = session.games.find((g) => !g.done);
       const g = open ?? newGame();

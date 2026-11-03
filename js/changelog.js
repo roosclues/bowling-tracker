@@ -4,6 +4,23 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261104-0743',
+    title: 'Your own coach, less to fill in and lane notes',
+    items: [
+      'New Coach tab: a bowling coach that works offline. Before you bowl it tells you where to start and what to work on; during a game it reads your last first balls (the pins you leave say if you hit light or high) and tells you when to move your feet or arrow, by how many boards; after a session it compares the day with your usual.',
+      'Tap questions to ask the coach: what line to play, why you keep leaving a pin, how to get more strikes or spares, whether to change your speed, and whether you\'re improving. During a game, the speech bubble next to your score opens it.',
+      'Lane notes: mark a lane Avoid or Good, tap what was wrong (ball return, pinsetter, scoring screen, oil, approach) and add a few words. Add one from the session or game summary screen.',
+      'Next time, Home shows the lanes to avoid under "Bowl at …", and the session form shows your note as soon as you type the lane number, so you can ask the desk for another lane.',
+      'The spare aim learns from you: after a few tries at a pin, it moves up to 2 boards toward where you make it. In Spare practice, Missed is now Left or Right; in a game, a missed spare can say which way it went (optional).',
+      'Home: "Bowl at …" starts a session in one tap, with the same center, ball and oil as last time. Add the lane later with the session\'s Edit button if you want it.',
+      'New session asks only for the center, the lane and what to log. Date, ball, oil and notes keep last time\'s values under "More details".',
+      'What to log: Pins only, Feet & arrow, or Everything. Feet & arrow is the new standard: the game screen no longer shows the breakpoint, pin hit, speed and how it felt. Want them back? Pick Everything in Settings, when you start a session, or at the bottom of the game screen.',
+      'Your feet and arrow carry over from the last ball as one line, so the pins and Save fit on the screen. Moved? Tap the arrows next to Feet or Arrow to move a board. Change opens the lane.',
+      'No tab bar during a game, bigger pins on larger phones, and the spare aim shows once, under your line.',
+      'A spare you haven\'t logged before now starts on the suggested spare aim, not on the line from a different spare.',
+    ],
+  },
+  {
     version: 'v20261031-0622',
     title: 'Strike carry, your moves and a bowling calendar',
     items: [

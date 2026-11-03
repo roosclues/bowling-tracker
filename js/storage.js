@@ -3,11 +3,12 @@
 // db = {
 //   version: 1,
 //   settings: { hand: 'R'|'L', last: {center, ball, oil}, sessionsSinceBackup, lastBackup, keepAwake, haptics,
-//               skin: 'minimal'|'classic', seenVersion, quick, speedUnit: 'kph'|'mph',
+//               skin: 'minimal'|'classic', seenVersion, log: 'pins'|'line'|'all', speedUnit: 'kph'|'mph',
 //               goals: [{ key, target, reachedOn, reachedGame }] },
 //   sessions: [{ id, date, center, lane, ball, oil, notes,
 //                games: [{ id, frames: [[shot, ...] x10], done, score }] }],
-//   practice: [{ id, date, leave: [pins], made, feet, target }]   (spare practice tries)
+//   practice: [{ id, date, leave: [pins], made, miss: 'left'|'right'|null, feet, target }]   (spare practice tries)
+//   laneNotes: [{ id, center, lane, verdict: 'avoid'|'good'|null, tags: [], text, date }]   (one per center + lane)
 // }
 // shot = { standing: [pins], feet, target, breakpoint, hit, speed (mph), tags: [], note }
 

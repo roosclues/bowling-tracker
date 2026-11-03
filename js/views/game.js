@@ -1,19 +1,21 @@
-// Game entry: record each ball (pins left, feet, arrow, breakpoint, extras). Quick mode hides
-// the line and details and doesn't pre-fill them, so new balls are saved with pins only.
-// Spare balls get a suggested line from the 3-6-9 system.
+// Game entry: record each ball. What to log (db.settings.log) picks what's asked: pins only,
+// pins + feet & arrow (the default), or everything (breakpoint, pin hit, speed, how it felt).
+// Pins only hides the line and doesn't pre-fill it, so new balls are saved with pins only.
+// Spare balls get a suggested line from the 3-6-9 system, adjusted by your own tries; a missed
+// spare can say which way it went. A line carried over from the last ball shows as one row,
+// with buttons to move feet or arrow a board, until you tap Change.
 // After the game, the summary opens balls here to add details (#/edit/…), one at a time or
 // stepping through every ball without feet or arrow (#/review/…). The pins are locked then,
 // so the score can't change.
 
 import { db, save, findSession, findGame, refreshScore, stampReachedGoals, unstampGoals } from '../storage.js';
 import { nextShot, pinsBefore, isFreshRack, scoreGame, frameDone } from '../scoring.js';
-import { strikeLineFor } from '../stats.js';
+import { strikeLineFor, spareAimFor } from '../stats.js';
 import { mountLane } from '../lane.js';
 import { mountPins } from '../pins.js';
-import { spareAim } from '../spares.js';
 import { scoreboardHTML } from '../scoreboard.js';
-import { HITS, TAGS, infoButton } from '../terms.js';
-import { topbar, icon, aimHTML } from '../ui.js';
+import { HITS, TAG, TAGS, infoButton, logLabel } from '../terms.js';
+import { topbar, icon, aimHTML, logChips } from '../ui.js';
 import { buzz, celebrate } from '../device.js';
 import { esc, toast, go, plural, tapGuard, toSpeedUnit, fromSpeedUnit, SPEED_UNITS } from '../util.js';
 
@@ -51,8 +53,9 @@ function earlierLine(game, frame, shot, fresh) {
 }
 
 // Most recent ball of the same kind with a line recorded, to pre-fill feet and arrow.
-// First balls copy the last first ball; spare balls prefer the last spare at the same leave.
-function lastLine(fresh, leave) {
+// First balls copy the last first ball; spare balls prefer the last spare at the same leave,
+// and with `exact` take only that.
+function lastLine(fresh, leave, exact = false) {
   let fallback = null;
   for (let si = db.sessions.length - 1; si >= 0; si--) {
     const games = db.sessions[si].games;
@@ -64,7 +67,7 @@ function lastLine(fresh, leave) {
           const shot = shots[s];
           if (isFreshRack(shots, s) !== fresh || (shot.feet == null && shot.target == null)) continue;
           if (fresh || pinsBefore(shots, s).join('-') === leave) return shot;
-          fallback ??= shot;
+          if (!exact) fallback ??= shot;
         }
       }
     }
@@ -84,7 +87,7 @@ function keepsFrameShape(f, before, after) {
 }
 
 // `restored` marks a ball that was already saved once (taken back with Undo, or being
-// edited): its details are kept even in quick mode.
+// edited): its details are kept even when What to log doesn't show them.
 function draftFrom(shot, key, restored = false) {
   return {
     key,
@@ -97,13 +100,21 @@ function draftFrom(shot, key, restored = false) {
     speed: shot?.speed ?? null,
     tags: [...(shot?.tags ?? [])],
     note: shot?.note ?? '',
+    lineOpen: false, // a carried-over line shows as one row until Change opens the lane
   };
 }
 
-// A new ball starts with your last feet and arrow, except in quick mode, where nothing is
-// shown so nothing should be saved that you didn't see.
-function newDraft(key, fresh, leave) {
-  const carry = db.settings.quick ? null : lastLine(fresh, leave);
+// A new ball starts with your last feet and arrow, except with Pins only, where nothing is
+// shown so nothing should be saved that you didn't see. A spare ball at a leave you haven't
+// logged before starts on the spare aim from your strike line, rather than the line of a
+// different spare; with no strike line yet, it falls back to your last spare ball.
+function newDraft(key, fresh, available) {
+  if (db.settings.log === 'pins') return draftFrom(null, key);
+  const leave = available.join('-');
+  let carry = lastLine(fresh, leave, true);
+  if (!carry && !fresh) {
+    carry = (strikeLineFor(db.sessions) && spareAimFor(available, db.sessions, db.practice, db.settings.hand)) || lastLine(fresh, leave);
+  }
   return draftFrom({ feet: carry?.feet, target: carry?.target }, key);
 }
 
@@ -216,7 +227,7 @@ function draw(root, sid, gid) {
     } else if (top?.key === key) draft = draftFrom(top.shot, key, true);
     else {
       undone = [];
-      draft = newDraft(key, fresh, available.join('-'));
+      draft = newDraft(key, fresh, available);
     }
   }
   const d = draft;
@@ -225,9 +236,28 @@ function draw(root, sid, gid) {
   const left = reviewing ? ballsWithoutLine(game, target).length : 0;
   const summaryHash = `#/summary/${sid}/${gid}`;
   // Editing always shows every detail, so an earlier ball's details can always be fixed.
-  const quick = db.settings.quick && !editing;
-  const last = quick || editing ? null : lastLine(fresh, available.join('-'));
-  const aim = fresh || editing ? null : spareAim(available, strikeLineFor(db.sessions), db.settings.hand);
+  const level = editing ? 'all' : db.settings.log;
+  const pinsOnly = level === 'pins';
+  const hand = db.settings.hand;
+  // A new ball with its line already filled in shows it as one row; Change opens the lane.
+  const compact = !pinsOnly && !editing && !d.lineOpen && hasLine(d);
+  const last = pinsOnly || editing ? null : lastLine(fresh, available.join('-'));
+  const aim = fresh || editing ? null : spareAimFor(available, db.sessions, db.practice, hand);
+  // Under the line row: "On your spare aim" while the line is on it, or the aim with Use when
+  // it isn't. Both take one line, so a nudge never moves the buttons under your finger.
+  const aimRow = () => (d.feet === aim.feet && d.target === aim.target
+    ? `<p class="aim" id="aim">${icon('target', 18)}<span>On your spare aim</span>${infoButton('spareAim')}</p>`
+    : aimHTML(aim, { use: true }));
+  // On a spare you're missing, which way it went (optional): the spare aim learns from it.
+  // Only with your feet logged, since the aim needs to know where you stood.
+  const missRow = !fresh && !pinsOnly && !editing;
+  // Feet or arrow one board left or right. Boards count from the hand side, as on the lane.
+  const nudge = (k, name) => `
+    <span class="nudge">${name}
+      <button type="button" class="step" data-nudge="${k}" data-d="${hand === 'L' ? -1 : 1}" aria-label="${name} left">${icon('chevL', 18)}</button>
+      <b id="${k}Val">${d[k]}</b>
+      <button type="button" class="step" data-nudge="${k}" data-d="${hand === 'L' ? 1 : -1}" aria-label="${name} right">${icon('chevR', 18)}</button>
+    </span>`;
   const gameNo = session.games.indexOf(game) + 1;
   const { total } = scoreGame(game.frames);
   // How-to hints show for your first few games, then make room for the pins and lane.
@@ -238,11 +268,10 @@ function draw(root, sid, gid) {
       back: finished ? summaryHash : `#/session/${sid}`,
       title: `Game ${gameNo}`,
       sub: `${esc(session.center || 'Bowling')}${session.lane ? ` · Lane ${esc(session.lane)}` : ''}`,
-      right: `<div class="bigscore" aria-label="Score"><span>Score</span>${total}</div>`,
+      right: `<a class="tb-action coach-link" href="#/coach" aria-label="Coach">${icon('coach', 20)}</a><div class="bigscore" aria-label="Score"><span>Score</span>${total}</div>`,
     })}
     <div class="page game">
       <div class="sb-wrap">${scoreboardHTML(game.frames, { current: pos, selected: editing })}</div>
-      ${isNew ? '<p class="hint center">Tap any ball on the scoreboard to edit its details.</p>' : ''}
 
       <div class="shot-head">
         <h2>${editing ? 'Editing · ' : ''}Frame ${target.frame + 1} · Ball ${target.shot + 1}</h2>
@@ -253,7 +282,7 @@ function draw(root, sid, gid) {
           ? `. Feet and arrow copied from frame ${d.copiedFrom.frame + 1}, ball ${d.copiedFrom.index + 1}: change them if this ball was different.`
           : '.'}</p>` : ''}
       ${session.notes ? `<p class="focus" id="focus">${icon('flag', 16)}<span>Working on: ${esc(session.notes)}</span></p>` : ''}
-      ${aim ? aimHTML(aim, { use: !quick }) : ''}
+      ${pinsOnly && aim ? aimHTML(aim) : ''}
 
       <section class="card">
         <div class="card-h">
@@ -261,6 +290,12 @@ function draw(root, sid, gid) {
           ${finished ? '' : '<button type="button" class="link" data-act="allup">All still up</button>'}
         </div>
         <div id="pins"></div>
+        ${missRow ? `
+        <div class="miss-row" id="missRow"${d.standing.size ? '' : ' hidden'}>
+          <span>Missed?</span>
+          <div class="seg">${[[TAG.missedLeft, `${icon('chevL', 18)} Left`], [TAG.missedRight, `Right ${icon('chevR', 18)}`]].map(([t, label]) =>
+            `<button type="button" class="chip${d.tags.includes(t) ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${d.tags.includes(t)}" aria-label="${esc(t)}">${label}</button>`).join('')}</div>
+        </div>` : ''}
         ${finished || editing || isNew ? `<p class="hint center">${finished
           ? 'Pins are locked once the game is over, so the score stays the same. To fix pins, use Undo last ball on the summary.'
           : editing
@@ -268,24 +303,29 @@ function draw(root, sid, gid) {
             : 'Tap the pins still standing. Nothing tapped = all knocked down.'}</p>` : ''}
       </section>
 
-      ${quick ? `
-      <section class="card" id="quickCard">
-        <div class="card-h"><h3>Quick mode</h3>${infoButton('quick')}</div>
-        <p class="hint">Only the pins are saved.</p>
-        <button type="button" class="btn block" data-act="quick">Log feet, arrow and details again</button>
-      </section>` : `
-      <section class="card">
-        <div class="card-h"><h3>Your line</h3>${last
+      ${pinsOnly ? '' : `
+      <section class="card" id="lineCard">
+        <div class="card-h"><h3>Your line</h3>${compact
+          ? '<button type="button" class="link" data-act="line">Change</button>'
+          : last
           ? '<button type="button" class="link" data-act="repeat">Same as last ball</button>'
           : '<small>Tap or slide on the lane</small>'}</div>
-        <div id="lane"></div>
-      </section>
-
+        ${compact ? `
+          <div class="line-row" id="lineRow">${nudge('feet', 'Feet')}${nudge('target', 'Arrow')}${level === 'all' && d.breakpoint != null
+            ? `<span class="nudge">Breakpoint <b>${d.breakpoint}</b></span>` : ''}</div>
+          ${aim ? aimRow() : ''}`
+          : `${aim ? aimHTML(aim, { use: true }) : ''}<div id="lane"></div>`}
+      </section>`}
+      ${level === 'all' ? `
       <details class="card more" id="more" ${moreOpen ? 'open' : ''}>
         <summary>More details <small>optional</small></summary>
         <div id="moreBody">${moreHTML(d, fresh)}</div>
-      </details>
-      ${editing ? '' : '<p class="hint center"><button type="button" class="link" data-act="quick">Pins only (quick mode)</button></p>'}`}
+      </details>` : ''}
+      ${editing ? '' : `
+      <div class="field log-level" id="logLevel">
+        <label>What to log ${infoButton('log')}</label>
+        <div class="seg full">${logChips(level)}</div>
+      </div>`}
 
     </div>
     <div class="actionbar">
@@ -308,16 +348,32 @@ function draw(root, sid, gid) {
     else saveBtn.textContent = `Save · ${plural(down, 'pin')}`;
   }
 
+  const syncTags = () => root.querySelectorAll('[data-tag]').forEach((b) => {
+    b.classList.toggle('on', d.tags.includes(b.dataset.tag));
+    b.setAttribute('aria-pressed', String(d.tags.includes(b.dataset.tag)));
+  });
+  // The Missed row shows once a pin stays up; a spare made after all drops the direction.
+  const missEl = root.querySelector('#missRow');
+  function pinsChanged() {
+    updateSaveLabel();
+    if (!missEl) return;
+    missEl.hidden = d.standing.size === 0;
+    if (missEl.hidden && d.tags.some((t) => t === TAG.missedLeft || t === TAG.missedRight)) {
+      d.tags = d.tags.filter((t) => t !== TAG.missedLeft && t !== TAG.missedRight);
+      syncTags();
+    }
+  }
+
   const pins = mountPins(root.querySelector('#pins'), {
     available,
     standing: d.standing,
     readOnly: finished,
-    onChange: updateSaveLabel,
+    onChange: pinsChanged,
   });
-  const lane = quick ? null : mountLane(root.querySelector('#lane'), { hand: db.settings.hand, value: d });
+  const lane = pinsOnly || compact ? null : mountLane(root.querySelector('#lane'), { hand, value: d, breakpoint: level === 'all' });
   updateSaveLabel();
 
-  if (!quick) {
+  if (level === 'all') {
     root.querySelector('#more').addEventListener('toggle', (e) => { moreOpen = e.target.open; });
     root.querySelector('#speed').addEventListener('input', (e) => {
       const v = parseFloat(e.target.value);
@@ -369,9 +425,32 @@ function draw(root, sid, gid) {
     }
     if (el.dataset.tag) {
       const t = el.dataset.tag;
-      d.tags = d.tags.includes(t) ? d.tags.filter((x) => x !== t) : [...d.tags, t];
-      el.classList.toggle('on');
-      el.setAttribute('aria-pressed', String(d.tags.includes(t)));
+      // A ball can't miss both ways. The same tag can show twice (Missed row and More details).
+      const other = { [TAG.missedLeft]: TAG.missedRight, [TAG.missedRight]: TAG.missedLeft }[t];
+      d.tags = d.tags.includes(t) ? d.tags.filter((x) => x !== t) : [...d.tags.filter((x) => x !== other), t];
+      syncTags();
+      return;
+    }
+    if (el.dataset.nudge) {
+      const k = el.dataset.nudge;
+      d[k] = Math.min(39, Math.max(1, d[k] + Number(el.dataset.d)));
+      root.querySelector(`#${k}Val`).textContent = d[k];
+      if (aim) root.querySelector('#aim').outerHTML = aimRow();
+      buzz();
+      return;
+    }
+    if (el.dataset.log) {
+      if (el.dataset.log === db.settings.log) return;
+      db.settings.log = el.dataset.log;
+      save();
+      // A new ball starts over with or without the carried-over line; the pins stay.
+      if (!d.restored) {
+        const standing = d.standing;
+        draft = newDraft(d.key, fresh, available);
+        draft.standing = standing;
+      }
+      draw(root, sid, gid);
+      toast(`What to log: ${logLabel(db.settings.log)}`);
       return;
     }
     if (el.dataset.f !== undefined) {
@@ -388,36 +467,31 @@ function draw(root, sid, gid) {
       case 'aim':
         d.feet = aim.feet;
         d.target = aim.target;
-        lane?.refresh();
+        if (lane) lane.refresh();
+        else draw(root, sid, gid);
+        break;
+      case 'line':
+        d.lineOpen = true;
+        draw(root, sid, gid);
         break;
       case 'repeat':
-        // Copy what the last ball of this kind recorded; keep anything it left blank.
+        // Copy what the last ball of this kind recorded; keep anything it left blank. The
+        // breakpoint and speed only when they're on screen, so nothing unseen is saved.
         d.feet = last.feet;
         d.target = last.target;
-        if (last.breakpoint != null) d.breakpoint = last.breakpoint;
-        if (last.speed != null) {
-          d.speed = last.speed;
-          root.querySelector('#speed').value = speedValue(last.speed);
+        if (level === 'all') {
+          if (last.breakpoint != null) d.breakpoint = last.breakpoint;
+          if (last.speed != null) {
+            d.speed = last.speed;
+            root.querySelector('#speed').value = speedValue(last.speed);
+          }
         }
         lane.refresh();
         break;
-      case 'quick': {
-        db.settings.quick = !db.settings.quick;
-        save();
-        // A new ball starts over with or without the carried-over line; the pins stay.
-        if (!d.restored) {
-          const standing = d.standing;
-          draft = newDraft(d.key, fresh, available.join('-'));
-          draft.standing = standing;
-        }
-        draw(root, sid, gid);
-        toast(db.settings.quick ? 'Quick mode: only pins are saved' : 'Logging your line again');
-        break;
-      }
       case 'allup':
         available.forEach((p) => d.standing.add(p));
         pins.refresh();
-        updateSaveLabel();
+        pinsChanged();
         break;
       case 'save': {
         game.frames[target.frame].push(shotFromDraft(d, fresh));

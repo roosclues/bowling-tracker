@@ -1,6 +1,6 @@
 # Bowling Tracker
 
-A phone app (Progressive Web App) for logging every ball you bowl: pins left, where your feet started, which arrow the ball crossed, the breakpoint, pin hit, speed and how it felt. It works out your score, shows which feet + arrow lines get you the most strikes, suggests where to aim for each spare, and has a spare practice mode and goals.
+A phone app (Progressive Web App) for logging every ball you bowl: pins left, where your feet started, which arrow the ball crossed, the breakpoint, pin hit, speed and how it felt. It works out your score, shows which feet + arrow lines get you the most strikes, suggests where to aim for each spare (adjusted to how your own tries went), and has a spare practice mode, goals, lane notes for lanes to avoid, and a built-in coach that gives advice before, during and after a session.
 
 Plain HTML, CSS and JavaScript, with no build step and no dependencies. Data stays on the phone (browser localStorage), with backup/restore and CSV export in Settings.
 
@@ -55,7 +55,9 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 | `js/storage.js` | Saving, backup/restore, CSV export, sync between open copies |
 | `js/normalize.js` | Checks and repairs saved or restored data |
 | `js/stats.js` | Stat calculations, progress (first vs latest games), personal bests, goals, coaching tips |
-| `js/spares.js` | Spare aiming (3-6-9 system) from the bowler's strike line |
+| `js/spares.js` | Spare aiming (3-6-9 system) from the bowler's strike line, adjusted by their own tries |
+| `js/coach.js` | The coach: before/during/after messages, reading a leave as a light or high hit, and answers to the questions you can tap |
+| `js/lanenotes.js` | Lane notes (Avoid / Good, problems, a note per center and lane) and the reminders built from them |
 | `js/lane.js`, `js/pins.js` | Tappable lane and pin-deck pickers |
 | `js/lanemap.js` | To-scale lane on the Help screen |
 | `js/changelog.js`, `js/version.js` | Update history and the current version (shown in Settings) |

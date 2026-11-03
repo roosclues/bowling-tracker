@@ -126,6 +126,10 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 body.has-actionbar { padding-bottom: calc(var(--tab-h) + var(--act-h) + env(safe-area-inset-bottom) + 20px); }
+/* Entering balls: no tab bar, so the action bar sits at the bottom edge. */
+body.in-game { --tab-h: 0px; }
+body.in-game .tabbar { display: none; }
+body.in-game .actionbar { bottom: 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
 a { color: var(--link); }
 h2 { font-size: 1.2rem; margin: 0; letter-spacing: -0.01em; }
 h3 { font-size: 1rem; margin: 0 0 6px; letter-spacing: -0.005em; }
@@ -405,6 +409,18 @@ button.box { cursor: pointer; }
 .more summary::after { content: "+"; margin-left: auto; font-size: 1.4rem; font-weight: 400; color: var(--muted); }
 .more[open] summary::after { content: "−"; }
 .more summary small { color: var(--muted); font-weight: 500; }
+.form .more summary { min-height: 52px; }
+.line-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 2px 0 6px; font-size: 0.95rem; color: var(--ink-2); }
+.nudge { display: inline-flex; align-items: center; gap: 2px; }
+.nudge b { min-width: 2.1ch; text-align: center; color: var(--ink); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.nudge button:first-of-type { margin-left: 4px; }
+.log-level { margin: 18px 0 6px; }
+.miss-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 10px 0 2px; font-size: 0.9rem; color: var(--ink-2); }
+.miss-row[hidden] { display: none; }
+.miss-row .chip { display: inline-flex; align-items: center; gap: 4px; }
+/* Spare practice: Missed left · Made · Missed right, one tap each */
+.practice-bar .btn { flex: 1; gap: 4px; padding: 0 8px; }
+.practice-bar .btn.primary { flex: 1.3; }
 
 /* Pin deck */
 .deck {
@@ -413,7 +429,7 @@ button.box { cursor: pointer; }
     repeating-linear-gradient(90deg, var(--wood-line) 0 1px, transparent 1px 9px),
     linear-gradient(180deg, var(--wood-2), var(--wood));
 }
-.pins { display: block; width: 100%; max-width: 270px; margin: 0 auto; touch-action: manipulation; }
+.pins { display: block; width: 100%; max-width: 340px; margin: 0 auto; touch-action: manipulation; }
 .pin { cursor: pointer; outline: none; }
 .pin-hit { fill: transparent; }
 .pin-body { fill: rgba(90, 58, 23, 0.08); stroke: rgba(90, 58, 23, 0.5); stroke-width: 1.8; stroke-dasharray: 4 3; transition: fill 0.1s; }
@@ -475,11 +491,12 @@ button.box { cursor: pointer; }
 .lr-val { flex: 1; min-width: 0; font-size: 0.84rem; font-weight: 550; }
 .lr-row.empty .lr-val { color: var(--muted); font-weight: 400; }
 .lr-btns { display: flex; gap: 4px; }
-.lr-btns button {
+.lr-btns button, .nudge button {
   display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; padding: 0;
   border: 1px solid var(--border); background: var(--surface-2); color: var(--ink); cursor: pointer;
 }
-.lr-btns button:active { background: var(--surface-3); }
+.lr-btns button:active, .nudge button:active { background: var(--surface-3); }
+.nudge button { width: 36px; } /* Feet and Arrow fit on one row on a 360px phone */
 .lr-btns .clear { color: var(--muted); }
 
 /* ---------- Summary ---------- */
@@ -642,6 +659,32 @@ button.box { cursor: pointer; }
 .goal-bar i { display: block; height: 100%; border-radius: 2px; background: var(--chart); }
 .goals li.met .goal-bar i { background: var(--good); }
 .goals li.met strong, .goal-note { color: var(--good); }
+
+/* Coach: the coach's messages are tips; your questions sit on the right */
+.coach-chat { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 18px; }
+.bubble .tip { margin: 0 0 8px; }
+.bubble .tip:last-child { margin-bottom: 0; }
+.bubble.you {
+  align-self: flex-end; max-width: 80%; padding: 10px 14px; border-radius: 16px 16px 4px 16px;
+  background: var(--accent); color: var(--accent-ink); font-size: 0.92rem; font-weight: 600; scroll-margin-top: 80px;
+}
+[data-skin="minimal"] .bubble.you { background: var(--ink); color: var(--page); border-radius: 12px 12px 4px 12px; font-weight: 500; }
+.coach-qs .chip { text-align: left; }
+.coach-link { margin-right: 8px; }
+
+/* Lane notes */
+.lane-avoid { color: var(--bad); }
+.lane-good { color: var(--good); }
+.lane-notes { list-style: none; margin: 0; padding: 0; }
+.lane-notes li { display: flex; align-items: baseline; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.lane-notes li:first-child { border-top: 0; }
+.ln-lane { flex: none; min-width: 4.5em; font-weight: 700; }
+.ln-sum { flex: 1; min-width: 0; font-size: 0.88rem; color: var(--ink-2); }
+.lane-notes .link { flex: none; }
+.lane-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 2px; font-size: 0.9rem; color: var(--ink-2); }
+.lane-row .link { flex: none; padding: 8px 0; }
+.lane-hint.warn::before, .lane-warn.warn::before { content: "⚠ "; }
+.lane-warn { display: block; margin-top: 8px; color: inherit; }
 .goal-note { display: block; margin-top: 4px; font-size: 0.78rem; font-weight: 600; }
 .goal-edit .goal-label { flex: 1; min-width: 0; cursor: pointer; }
 .goal-edit .goal-label .hint { display: block; margin: 2px 0 0; }
@@ -813,7 +856,7 @@ dialog p { white-space: pre-line; color: var(--ink-2); }
 [data-skin="minimal"] .subtabs { margin: 10px -20px 4px; padding: 0 20px; }
 [data-skin="minimal"] .subtab { font-weight: 500; }
 [data-skin="minimal"] .subtab[aria-selected="true"]::after { left: 20%; right: 20%; height: 2px; border-radius: 0; background: var(--ink); }
-[data-skin="minimal"] .lr-btns button { border-radius: 8px; background: var(--page); }
+[data-skin="minimal"] .lr-btns button, [data-skin="minimal"] .nudge button { border-radius: 8px; background: var(--page); }
 
 /* Arrangement: sections separated by lines instead of boxed cards */
 [data-skin="minimal"] .card, [data-skin="minimal"] .form .card {

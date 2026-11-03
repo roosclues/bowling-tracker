@@ -6,10 +6,9 @@
 
 import { db } from '../storage.js';
 import {
-  computeStats, filterSessions, tips, progress, personalBests, sessionAverages, strikeLineFor, practiceByLeave,
+  computeStats, filterSessions, tips, progress, personalBests, sessionAverages, spareAimFor, practiceByLeave,
   speedBands, GOAL_TYPES, MAX_GAME_NO,
 } from '../stats.js';
-import { spareAim } from '../spares.js';
 import { lineChart, barList, calendarHeat } from '../charts.js';
 import { miniPins } from '../pins.js';
 import { HITS, infoButton, carryNote } from '../terms.js';
@@ -215,7 +214,7 @@ function accuracyCard(a) {
     <section class="card" id="accuracy">
       <div class="card-h"><h3>How repeatable is your shot?</h3><small>1st balls</small></div>
       <ul class="kv">${rows.join('')}</ul>
-      <p class="hint">Repeating the same feet and arrow matters more than finding a perfect line. To track your aim, tag "Hit my arrow" or "Missed left/right" under More details.</p>
+      <p class="hint">Repeating the same feet and arrow matters more than finding a perfect line. To track your aim, tag "Hit my arrow" or "Missed left/right" (What to log: Everything).</p>
     </section>`;
 }
 
@@ -229,7 +228,7 @@ function hitsCard(st) {
         value: st.hits[h.key] ?? 0,
         display: `${pct(st.hits[h.key] ?? 0, total)}%`,
       })), { max: total }) + `<p class="hint">From ${plural(total, '1st ball')} with "Pin hit" recorded.</p>`
-      : '<p class="hint">Record "Pin hit" under More details to see this.</p>'}
+      : '<p class="hint">Record "Pin hit" to see this (What to log: Everything).</p>'}
     </section>`;
 }
 
@@ -311,8 +310,8 @@ function leavesCard(st, hand) {
         <p class="hint">No leaves yet. All strikes? 🎳</p>
       </section>`;
   }
-  // Aims start from your usual strike line over all games, like the game screen and practice.
-  const line = strikeLineFor(db.sessions);
+  // Aims start from your usual strike line over all games and learn from your tries, like
+  // the game screen and practice.
   const practice = practiceByLeave(db.practice);
   const outcome = (x) => {
     if (!x.next) return 'no 2nd ball yet';
@@ -325,7 +324,7 @@ function leavesCard(st, hand) {
       <div class="card-h"><h3>Most common leaves</h3><small>tap one for details</small></div>
       <ul class="leaves">${st.leaves.slice(0, 8).map((l) => {
         const name = l.standing.join('-');
-        const aim = spareAim(l.standing, line, hand);
+        const aim = spareAimFor(l.standing, db.sessions, db.practice, hand);
         const p = practice.get(name);
         return `
         <li><details>
@@ -334,7 +333,7 @@ function leavesCard(st, hand) {
             <span class="leave-info">
               <span class="leave-name"><strong>${name}</strong>${l.split ? ' <span class="tag-split">split</span>' : ''}</span>
               <span class="sub">Left ${l.count}× (${pct(l.count, st.firstBalls)}% of 1st balls) · picked up ${l.made}/${l.chances}${p ? ` · practice ${p.made}/${p.n}` : ''}</span>
-              <span class="sub">Aim: feet ${aim.feet} · arrow ${aim.target}${l.worked ? ` · worked for you: feet ${l.worked.feet}, arrow ${l.worked.target} (${l.worked.made}/${l.worked.n})` : ''}</span>
+              <span class="sub">Aim: feet ${aim.feet}${aim.learned ? ` (3-6-9: ${aim.base})` : ''} · arrow ${aim.target}${l.worked ? ` · worked for you: feet ${l.worked.feet}, arrow ${l.worked.target} (${l.worked.made}/${l.worked.n})` : ''}</span>
             </span>
           </summary>
           <div class="leave-more">
@@ -344,7 +343,7 @@ function leavesCard(st, hand) {
           </div>
         </details></li>`;
       }).join('')}</ul>
-      <p class="hint">Aims use the 3-6-9 system from your usual strike line. ${infoButton('spareAim')}</p>
+      <p class="hint">Aims use the 3-6-9 system from your usual strike line, moved a board or two by your own tries. ${infoButton('spareAim')}</p>
     </section>`;
 }
 
@@ -353,7 +352,7 @@ function feelCard(st) {
     return `
       <section class="card" id="feel">
         <div class="card-h"><h3>How it felt</h3></div>
-        <p class="hint">Tag balls under More details ("Rushed", "Good release"…) to see how each feeling lines up with your strikes.</p>
+        <p class="hint">Set What to log to Everything and tag how balls felt ("Rushed", "Good release"…) to see how each feeling lines up with your strikes.</p>
       </section>`;
   }
   return `
@@ -382,7 +381,7 @@ export function render(root) {
   if (!oils.includes(filters.oil)) filters.oil = '';
   const sessions = filterSessions(db.sessions, filters);
   const st = computeStats(sessions);
-  const hints = tips(st, db.settings.hand, sessions, db.settings.speedUnit);
+  const hints = tips(st, db.settings.hand, sessions, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand));
   const filtered = filters.days || filters.center || filters.ball || filters.oil;
   const practiced = db.practice.length;
   const practiceMade = db.practice.filter((p) => p.made).length;

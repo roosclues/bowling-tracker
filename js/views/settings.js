@@ -1,9 +1,10 @@
-// Settings: handedness, speed unit, theme, backup/restore, CSV export, storage info.
+// Settings: handedness, speed unit, what to log, theme, backup/restore, CSV export, storage info.
 
 import {
   db, save, downloadBackup, restoreBackup, canUndoRestore, undoRestore, exportCSV, canShareFiles, wipeAll, requestPersist,
 } from '../storage.js';
-import { topbar, icon } from '../ui.js';
+import { infoButton, logLabel } from '../terms.js';
+import { topbar, icon, logChips } from '../ui.js';
 import { APP_VERSION, versionDate } from '../version.js';
 import { fmtDate, toast, go, plural, SPEED_UNITS } from '../util.js';
 
@@ -64,6 +65,12 @@ export function render(root) {
         </div>
       </section>
 
+      <section class="card" id="logCard">
+        <div class="card-h"><h3>What to log</h3>${infoButton('log')}</div>
+        <p class="hint">What the game screen asks for on each ball. Anything you skip can be filled in from the game summary.</p>
+        <div class="seg full">${logChips(db.settings.log)}</div>
+      </section>
+
       <section class="card">
         <h3>Theme</h3>
         <p class="hint">Minimal uses plain colors, a clean font, and shows numbers in simple rows. Midnight lanes has a dark top bar, a wood lane and an alley-style scoreboard. Both follow your phone's light or dark mode.</p>
@@ -77,7 +84,6 @@ export function render(root) {
         <h3>At the lanes</h3>
         ${toggle('keepAwake', 'Keep screen on while bowling', 'Stops the phone from sleeping between shots.')}
         ${toggle('haptics', 'Vibrate on taps', 'A small buzz when you tap pins or save a ball.')}
-        ${toggle('quick', 'Quick mode', 'Save only the pins, for league nights. You can also switch it on the game screen.')}
       </section>
 
       <section class="card">
@@ -144,6 +150,13 @@ export function render(root) {
       save();
       render(root);
       toast(`Ball speed in ${SPEED_UNITS[btn.dataset.speedUnit]}`);
+      return;
+    }
+    if (btn.dataset.log) {
+      db.settings.log = btn.dataset.log;
+      save();
+      render(root);
+      toast(`What to log: ${logLabel(btn.dataset.log)}`);
       return;
     }
     switch (btn.dataset.act) {

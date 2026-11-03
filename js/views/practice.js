@@ -1,10 +1,11 @@
-// Spare practice: pick a leave, throw at it, tap Made or Missed. Make rates per leave build up
-// over time, kept apart from game stats (Stats shows them next to each leave).
+// Spare practice: pick a leave, throw at it, tap Made, or which way it missed. Make rates per
+// leave build up over time, kept apart from game stats (Stats shows them next to each leave);
+// the misses and your feet teach the spare aim (spares.adjustAim).
 
 import { db, save } from '../storage.js';
 import { ALL_PINS } from '../scoring.js';
-import { computeStats, strikeLine, practiceByLeave } from '../stats.js';
-import { spareAim, aimText, DEFAULT_LINE } from '../spares.js';
+import { computeStats, strikeLine, practiceByLeave, spareAimFor } from '../stats.js';
+import { aimText, DEFAULT_LINE } from '../spares.js';
 import { mountPins, miniPins } from '../pins.js';
 import { mountLane } from '../lane.js';
 import { infoButton } from '../terms.js';
@@ -37,7 +38,7 @@ function draw(root) {
   const fullRack = sorted.length === ALL_PINS.length;
   const st = computeStats(db.sessions);
   const fromLine = strikeLine(st);
-  const aim = sorted.length && !fullRack ? spareAim(sorted, fromLine, hand) : null;
+  const aim = sorted.length && !fullRack ? spareAimFor(sorted, db.sessions, db.practice, hand) : null;
   const lineKey = `${key}|${hand}|${aim?.feet}|${aim?.target}`;
   if (lineFor !== lineKey) {
     line = { feet: aim?.feet ?? null, target: aim?.target ?? null, breakpoint: null };
@@ -74,10 +75,10 @@ function draw(root) {
       ${aim ? `
       <section class="card">
         <div class="card-h"><h3>Where to aim</h3>${infoButton('spareAim')}</div>
-        ${aimHTML(aim, { label: 'Aim', info: false, id: 'practiceAim' })}
+        ${aimHTML(aim, { label: aim.learned ? 'Your aim' : 'Aim', info: false, id: 'practiceAim' })}
         <p class="hint">${aimText(aim)}</p>
         ${fromLine ? '' : `<p class="hint">This starts from feet ${DEFAULT_LINE.feet} and the board ${DEFAULT_LINE.target} arrow. Once you log games with your line, it starts from your own strike line.</p>`}
-        <p class="hint">Change the lane below to the line you actually used. Your feet and arrow are saved with each try.</p>
+        <p class="hint">Change the lane below to the line you actually used. Your feet and arrow are saved with each try. Missed? Tap <strong>Left</strong> or <strong>Right</strong> for the side the ball went, and the aim learns from it.</p>
         <div id="lane"></div>
       </section>` : ''}
 
@@ -105,10 +106,11 @@ function draw(root) {
         </table></div>
       </section>` : ''}
     </div>
-    <div class="actionbar">
+    <div class="actionbar practice-bar">
       <button type="button" class="btn icon-only" data-act="undo" aria-label="Undo last try">${icon('undo', 20)}</button>
-      <button type="button" class="btn" data-act="miss">Missed</button>
+      <button type="button" class="btn" data-act="missLeft" aria-label="Missed left">${icon('chevL', 18)} Left</button>
       <button type="button" class="btn primary" data-act="made">${icon('check', 20)} Made</button>
+      <button type="button" class="btn" data-act="missRight" aria-label="Missed right">Right ${icon('chevR', 18)}</button>
     </div>`;
 
   mountPins(root.querySelector('#pins'), { available: ALL_PINS, standing: leave, onChange: () => draw(root) });
@@ -123,7 +125,7 @@ function draw(root) {
       return;
     }
     const act = el.dataset.act;
-    if (!['made', 'miss', 'undo'].includes(act) || !once()) return;
+    if (!['made', 'missLeft', 'missRight', 'undo'].includes(act) || !once()) return;
 
     if (act === 'undo') {
       if (db.practice.at(-1)?.date !== today) {
@@ -134,7 +136,7 @@ function draw(root) {
       // The day's first try counted toward the backup reminder; taking it back undoes that.
       if (todayAll.length === 1 && db.settings.sessionsSinceBackup > 0) db.settings.sessionsSinceBackup--;
       save();
-      toast(`Took back a ${p.made ? 'made' : 'missed'} try on the ${p.leave.join('-')}`);
+      toast(`Took back a ${p.made ? 'made' : `missed${p.miss ? ` ${p.miss}` : ''}`} try on the ${p.leave.join('-')}`);
       draw(root);
       return;
     }
@@ -145,7 +147,8 @@ function draw(root) {
     // A day of practice counts like a session toward the backup reminder.
     if (!todayAll.length) db.settings.sessionsSinceBackup = (db.settings.sessionsSinceBackup || 0) + 1;
     const made = act === 'made';
-    db.practice.push({ id: uid(), date: today, leave: sorted, made, feet: line.feet, target: line.target });
+    const miss = made ? null : act === 'missLeft' ? 'left' : 'right';
+    db.practice.push({ id: uid(), date: today, leave: sorted, made, miss, feet: line.feet, target: line.target });
     save();
     if (made) {
       celebrate('spare');
