@@ -3,7 +3,7 @@
 // welcome, form, summary300, pins, spareaim, game, summary, lanes, session, home, stats, statsfirst, statsspares, practicemiss, help,
 // lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, practice, goals, goalreached, minsettings, minhome,
 // minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame.
-// Add &scroll=<selector> to scroll a card into view there, and &skin=classic to look at the Midnight lanes theme up to the "progress" step (a restore resets it).
+// Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "progress" step (a restore resets it).
 // Add &size=360x780 for a smaller phone (the default is 412x915).
 
 const PARAMS = new URLSearchParams(location.search);
@@ -665,6 +665,11 @@ async function run() {
   check('before bowling, the coach says where to start', text('.topbar .t2') === 'Before you bowl' && /Feet \d+, arrow 10: it strikes \d+%/.test(text('#coachChat')), text('#coachChat').slice(0, 200));
   await click('[data-q="improving"]');
   check('tapping a question adds it and the answer', text('.bubble.you') === 'Am I improving?' && text('#coachChat').includes('Your last 9 games average'), text('#coachChat').slice(-200));
+  {
+    const reply = [...D.querySelectorAll('.bubble:not(.you)')].at(-1);
+    check('a coach reply is one card, its points without their own boxes', W.getComputedStyle(reply).backgroundColor !== 'rgba(0, 0, 0, 0)'
+      && W.getComputedStyle(reply.querySelector('.tip')).backgroundColor === 'rgba(0, 0, 0, 0)', W.getComputedStyle(reply).backgroundColor);
+  }
   stopAt('coach');
   await nav('#/');
   check('home shows the change in average', /^▲ \+\d+\s+average, last 9 games vs\. your first 9$/.test(text('.hero-trend')), text('.hero-trend'));
@@ -744,10 +749,14 @@ async function run() {
   await sleep(100);
   check('a bad game afterwards is not celebrated', text('.final-score') === '0' && !$('.goal-reached'), text('.hero'));
 
-  // ---- Minimal theme (the default) ----
+  // ---- Midnight lanes is the default theme; Minimal is one tap away ----
   const themeColor = () => D.querySelector('meta[name="theme-color"]').content;
   await nav('#/settings');
-  check('minimal is the default theme', db().settings.skin === 'minimal' && D.documentElement.dataset.skin === 'minimal' && $('.chip[data-skin="minimal"]').classList.contains('on'), db().settings.skin);
+  check('Midnight lanes is the default theme', db().settings.skin === 'classic' && D.documentElement.dataset.skin === 'classic'
+    && $('.chip[data-skin]').dataset.skin === 'classic' && $('.chip[data-skin="classic"]').classList.contains('on') && themeColor() === '#0b1222', `${db().settings.skin} ${themeColor()}`);
+  await click('.chip[data-skin="minimal"]');
+  await sleep(100);
+  check('switching to Minimal is saved', db().settings.skin === 'minimal' && D.documentElement.dataset.skin === 'minimal');
   check('minimal theme uses the Inter font', W.getComputedStyle(D.body).fontFamily.startsWith('Inter'), W.getComputedStyle(D.body).fontFamily);
   const page = W.getComputedStyle(D.documentElement).getPropertyValue('--page').trim();
   check('status bar matches the page color', themeColor() === page && ['#ffffff', '#0b0b0c'].includes(page), `${themeColor()} vs ${page}`);

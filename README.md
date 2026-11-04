@@ -20,7 +20,7 @@ The service worker serves the app from its offline cache, so edits don't show up
 python tests/run_tests.py
 ```
 
-This runs the scoring tests (`tests/test.html`) and an end-to-end run of the app in a phone-sized frame (`tests/e2e.html`) using headless Edge. Both pages also work in a normal browser while the server is running. To freeze the app at a step and look at it, use `tests/e2e.html?stop=game` (the full list of steps is at the top of `tests/e2e.js`, e.g. `spareaim`, `summary`, `session`, `stats`, `statsfirst`, `statsspares`, `practice`, `goals`, `goalreached`). Add `&skin=classic` to see the Midnight lanes theme.
+This runs the scoring tests (`tests/test.html`) and an end-to-end run of the app in a phone-sized frame (`tests/e2e.html`) using headless Edge. Both pages also work in a normal browser while the server is running. To freeze the app at a step and look at it, use `tests/e2e.html?stop=game` (the full list of steps is at the top of `tests/e2e.js`, e.g. `spareaim`, `summary`, `session`, `stats`, `statsfirst`, `statsspares`, `practice`, `goals`, `goalreached`). Add `&skin=minimal` to see the Minimal theme.
 
 ## Put it on your phone
 
@@ -48,7 +48,7 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 
 | Path | What it does |
 |---|---|
-| `index.html`, `css/styles.css` | App shell and styles: two themes (Minimal, the default, and Midnight lanes), each light and dark |
+| `index.html`, `css/styles.css` | App shell and styles: two themes (Midnight lanes, the default, and Minimal), each light and dark |
 | `fonts/` | Inter font for the Minimal theme (SIL Open Font License, `fonts/OFL.txt`) |
 | `js/app.js` | Router, bottom tabs, theme, glossary pop-ups, messages |
 | `js/scoring.js` | Bowling score rules, split detection |

@@ -1,7 +1,8 @@
 /* Bowling Tracker — two themes (Settings → Theme):
-   "minimal" (default, html[data-skin="minimal"], at the end of this file): plain colors, Inter, rows
-   instead of boxes. It overrides the base styles below.
-   "midnight lanes" (html[data-skin="classic"]): the base styles: deep navy, amber highlights, wood lane. */
+   "midnight lanes" (default, html[data-skin="classic"]): the base styles: deep navy, amber highlights,
+   wood lane.
+   "minimal" (html[data-skin="minimal"], at the end of this file): plain colors, Inter, rows instead of
+   boxes. It overrides the base styles. */
 
 /* Inter (SIL Open Font License, see fonts/OFL.txt), used by the minimal theme. */
 @font-face {
@@ -330,7 +331,7 @@ textarea { resize: vertical; }
 .banner span span { display: block; font-size: 0.84rem; color: var(--ink-2); }
 .notes { white-space: pre-wrap; background: var(--surface); border-radius: 12px; padding: 12px; border: 1px solid var(--border); }
 .tip {
-  position: relative; background: var(--accent-soft); border: 1px solid var(--border);
+  position: relative; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow);
   border-radius: 14px; padding: 12px 14px 12px 18px; margin: 12px 0; overflow: hidden;
 }
 .tip::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
@@ -527,6 +528,7 @@ button.box { cursor: pointer; }
 .tbl td { padding: 9px 4px; border-bottom: 1px solid var(--line); }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+#progress .tbl th { white-space: nowrap; }
 .table-view summary { color: var(--link); font-size: 0.86rem; font-weight: 650; cursor: pointer; padding: 6px 0; }
 .leaves { list-style: none; margin: 0; padding: 0; }
 .leaves > li { padding: 9px 0; border-top: 1px solid var(--line); }
@@ -660,14 +662,24 @@ button.box { cursor: pointer; }
 .goals li.met .goal-bar i { background: var(--good); }
 .goals li.met strong, .goal-note { color: var(--good); }
 
-/* Coach: the coach's messages are tips; your questions sit on the right */
+/* Coach: each reply is one card with its points divided by lines; your questions sit on the right */
 .coach-chat { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 18px; }
-.bubble .tip { margin: 0 0 8px; }
-.bubble .tip:last-child { margin-bottom: 0; }
+.bubble:not(.you) {
+  position: relative; overflow: hidden; padding: 2px 16px 2px 20px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px 18px 18px 4px; box-shadow: var(--shadow);
+}
+.bubble:not(.you)::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--accent); }
+.bubble .tip { margin: 0; padding: 12px 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
+.bubble .tip::before { display: none; }
+.bubble .tip + .tip { border-top: 1px solid var(--line); }
 .bubble.you {
   align-self: flex-end; max-width: 80%; padding: 10px 14px; border-radius: 16px 16px 4px 16px;
   background: var(--accent); color: var(--accent-ink); font-size: 0.92rem; font-weight: 600; scroll-margin-top: 80px;
 }
+[data-skin="minimal"] .bubble:not(.you) { padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; }
+[data-skin="minimal"] .bubble:not(.you)::before { display: none; }
+[data-skin="minimal"] .bubble .tip + .tip { border-top: 0; }
+[data-skin="minimal"] .bubble .tip:last-child { margin-bottom: 0; }
 [data-skin="minimal"] .bubble.you { background: var(--ink); color: var(--page); border-radius: 12px 12px 4px 12px; font-weight: 500; }
 .coach-qs .chip { text-align: left; }
 .coach-link { margin-right: 8px; }
@@ -685,6 +697,11 @@ button.box { cursor: pointer; }
 .lane-row .link { flex: none; padding: 8px 0; }
 .lane-hint.warn::before, .lane-warn.warn::before { content: "⚠ "; }
 .lane-warn { display: block; margin-top: 8px; color: inherit; }
+.hero a.lane-warn.warn {
+  margin: 8px 0 4px; padding: 9px 12px; border-radius: 12px; text-decoration: none; color: var(--brand-ink);
+  background: rgba(255, 176, 32, 0.12); border: 1px solid rgba(255, 176, 32, 0.32);
+}
+.hero a.lane-warn.warn::before { color: var(--accent); }
 .goal-note { display: block; margin-top: 4px; font-size: 0.78rem; font-weight: 600; }
 .goal-edit .goal-label { flex: 1; min-width: 0; cursor: pointer; }
 .goal-edit .goal-label .hint { display: block; margin: 2px 0 0; }
@@ -903,6 +920,8 @@ dialog p { white-space: pre-line; color: var(--ink-2); }
 [data-skin="minimal"] .hero { color: var(--ink); background: none; box-shadow: none; border-radius: 0; padding: 6px 0 2px; margin: 0 0 6px; }
 [data-skin="minimal"] .hero p { color: var(--ink-2); }
 [data-skin="minimal"] .hero a:not(.btn) { color: var(--link); }
+[data-skin="minimal"] .hero a.lane-warn.warn { margin: 8px 0 0; padding: 0; background: none; border: 0; border-radius: 0; }
+[data-skin="minimal"] .hero a.lane-warn.warn::before { color: inherit; }
 [data-skin="minimal"] .hero-label, [data-skin="minimal"] .hero-side dt { text-transform: none; letter-spacing: 0; font-size: 0.85rem; font-weight: 500; color: var(--muted); }
 [data-skin="minimal"] .hero-num { font-size: 4.4rem; font-weight: 300; letter-spacing: -0.05em; }
 [data-skin="minimal"] .hero-side dd { font-weight: 400; }

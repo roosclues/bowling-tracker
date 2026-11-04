@@ -12,7 +12,7 @@ const ID = /^\w{1,40}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const HIT_KEYS = new Set(HITS.map((h) => h.key));
 // App themes; the first is the default.
-export const SKINS = ['minimal', 'classic'];
+export const SKINS = ['classic', 'minimal'];
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);

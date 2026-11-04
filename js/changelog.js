@@ -4,6 +4,16 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261104-1013',
+    title: 'Midnight lanes is now the main theme',
+    items: [
+      'The app now starts in Midnight lanes: the dark top bar, the wood lane and the alley-style scoreboard. Already using Minimal? You keep it. Switch any time in Settings → Theme.',
+      'Each coach reply is now one card, so a few points from the coach read as one message.',
+      'Tips are calmer: a plain card with an amber edge, so a few in a row no longer turn the page amber.',
+      'Lanes to avoid stand out on Home, under "Bowl at …".',
+    ],
+  },
+  {
     version: 'v20261104-0743',
     title: 'Your own coach, less to fill in and lane notes',
     items: [
