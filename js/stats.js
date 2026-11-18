@@ -26,7 +26,8 @@ export function collectShots(sessions) {
   return out;
 }
 
-export function filterSessions(sessions, { days = 0, center = '', ball = '', oil = '' } = {}) {
+// `kind`: '' for everything, 'league' for league nights only, 'other' for everything else.
+export function filterSessions(sessions, { days = 0, center = '', ball = '', oil = '', kind = '' } = {}) {
   let cutoff = '';
   if (days) {
     // Local calendar date, to match how session dates are stored.
@@ -36,7 +37,8 @@ export function filterSessions(sessions, { days = 0, center = '', ball = '', oil
     cutoff = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
   return sessions.filter((s) => (!cutoff || s.date >= cutoff) && (!center || s.center === center)
-    && (!ball || s.ball === ball) && (!oil || s.oil === oil));
+    && (!ball || s.ball === ball) && (!oil || s.oil === oil)
+    && (!kind || (kind === 'league') === !!s.league));
 }
 
 // The most common value of shot[key] among `list`, or null.
@@ -76,6 +78,11 @@ export function computeStats(sessions) {
   const sparesMade = spareChances.filter((x) => x.next.standing.length === 0);
   const singleChances = spareChances.filter((x) => x.shot.standing.length === 1);
   const singleMade = singleChances.filter((x) => x.next.standing.length === 0);
+  // The other spare chances: splits, and leaves of 2 or more pins that aren't splits.
+  const splitChances = spareChances.filter((x) => isSplit(x.shot.standing));
+  const splitMade = splitChances.filter((x) => x.next.standing.length === 0);
+  const multiChances = spareChances.filter((x) => x.shot.standing.length > 1 && !isSplit(x.shot.standing));
+  const multiMade = multiChances.filter((x) => x.next.standing.length === 0);
   const splits = leaveShots.filter((x) => isSplit(x.shot.standing));
 
   // Open frames: completed frames with no strike or spare.
@@ -221,6 +228,10 @@ export function computeStats(sessions) {
     sparesMade: sparesMade.length,
     singleChances: singleChances.length,
     singleMade: singleMade.length,
+    multiChances: multiChances.length,
+    multiMade: multiMade.length,
+    splitChances: splitChances.length,
+    splitMade: splitMade.length,
     splits: splits.length,
     leaveCount: leaveShots.length,
     frames, opens,
@@ -329,11 +340,13 @@ export function spareAimFor(leave, sessions, practice, hand) {
 
 // The score if every missed spare had been made. Open frames get a spare instead; an open
 // 10th frame also gets its extra ball, repeating the first ball there.
-export function scoreWithSpares(frames) {
+// With `singlesOnly`, only missed single-pin spares are counted as made.
+export function scoreWithSpares(frames, { singlesOnly = false } = {}) {
   const fixed = frames.map((shots, f) => {
     const out = shots.map((s) => ({ standing: s.standing }));
     for (let i = 0; i < out.length - 1; i++) {
-      if (isFreshRack(out, i) && out[i].standing.length && out[i + 1].standing.length) out[i + 1] = { standing: [] };
+      if (isFreshRack(out, i) && out[i].standing.length && out[i + 1].standing.length
+        && (!singlesOnly || out[i].standing.length === 1)) out[i + 1] = { standing: [] };
     }
     if (f === 9 && out.length && !frameDone(9, out)) out.push({ standing: out[0].standing });
     return out;
@@ -440,6 +453,82 @@ export function personalBests(stats) {
     session: sessions.length ? sessions.reduce((a, b) => (b.average > a.average ? b : a)) : null,
     series: series.length ? series.reduce((a, b) => (b.score > a.score ? b : a)) : null,
   };
+}
+
+// What missed spares cost: the average pins a game you'd have added by making every spare,
+// and by making only the single-pin ones. Null before any finished games.
+export function sparePinsLost(stats) {
+  if (!stats.games.length) return null;
+  const lost = (opts) => avg(stats.games.map(({ game }) => scoreWithSpares(game.frames, opts) - game.score));
+  return { all: lost(), singles: lost({ singlesOnly: true }) };
+}
+
+// How much your scores swing: the standard deviation of your finished games, and how many of
+// them land within that many pins of your average. Null before 5 games.
+export const SWING_MIN_GAMES = 5;
+export function scoreSwing(stats) {
+  const scores = stats.games.map((g) => g.game.score);
+  if (scores.length < SWING_MIN_GAMES) return null;
+  const mean = avg(scores);
+  const sd = Math.sqrt(avg(scores.map((x) => (x - mean) ** 2)));
+  const within = scores.filter((x) => Math.abs(x - mean) <= sd).length;
+  return { sd: Math.round(sd), within, games: scores.length };
+}
+
+// The average of each value and the k - 1 before it; null until there are k values.
+export function rollingAverage(values, k = 5) {
+  return values.map((_, i) => (i < k - 1 ? null : avg(values.slice(i - k + 1, i + 1))));
+}
+
+// Strike chains and the 10th frame, over finished games. A first ball counts toward
+// afterStrike or afterOther by how the rack before it in the same game went.
+export function strikeChains(stats) {
+  const afterStrike = { n: 0, strikes: 0 };
+  const afterOther = { n: 0, strikes: 0 };
+  const tenth = { n: 0, marks: 0 };
+  for (const { game } of stats.games) {
+    let prev = null; // was the last first ball a strike?
+    game.frames.forEach((shots, f) => {
+      shots.forEach((shot, i) => {
+        if (!isFreshRack(shots, i)) return;
+        const strike = shot.standing.length === 0;
+        if (prev !== null) {
+          const bucket = prev ? afterStrike : afterOther;
+          bucket.n++;
+          if (strike) bucket.strikes++;
+        }
+        prev = strike;
+      });
+      if (f === 9 && shots.length) {
+        tenth.n++;
+        if (shots[0].standing.length === 0 || shots[1]?.standing.length === 0) tenth.marks++;
+      }
+    });
+  }
+  return { afterStrike, afterOther, tenth };
+}
+
+// ---------- League ----------
+
+export const LEAGUE_MIN_GAMES = 3; // league games before the app works out your average
+export const LEAGUE_ESTABLISH = 9; // league games after which your own average replaces a typed one
+export const LEAGUE_DEFAULTS = { on: false, base: 220, pct: 90, seasonStart: null, average: null };
+
+// Your league ("book") average and handicap going into the night `before` (a session in
+// `sessions`), or now when it's null. Like a league's entering average, an average typed in from
+// the league sheet is used until you've logged LEAGUE_ESTABLISH league games this season; then
+// it's your own games before that night, rounded down as league sheets do. With nothing typed,
+// your own average counts from LEAGUE_MIN_GAMES games.
+// Returns { average, typed, games, handicap }; average and handicap are null until there's one.
+export function leagueStanding(sessions, league, before = null) {
+  const upto = before ? sessions.slice(0, Math.max(0, sessions.indexOf(before))) : sessions;
+  const season = upto.filter((s) => s.league && (!league.seasonStart || s.date >= league.seasonStart));
+  const scores = finishedGames(season).map((g) => g.game.score);
+  const typed = league.average != null && scores.length < LEAGUE_ESTABLISH;
+  const own = scores.length >= LEAGUE_MIN_GAMES ? Math.floor(avg(scores)) : null;
+  const average = typed ? league.average : own;
+  const handicap = average == null ? null : Math.floor((Math.max(0, league.base - average) * league.pct) / 100);
+  return { average, typed, games: scores.length, handicap };
 }
 
 // ---------- Months and lifetime ----------

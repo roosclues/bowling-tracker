@@ -11,6 +11,7 @@ import { db } from '../storage.js';
 import {
   computeStats, filterSessions, tips, progress, personalBests, sessionAverages, spareAimFor, practiceByLeave,
   speedBands, GOAL_TYPES, MAX_GAME_NO, monthlyStats, lifetimeTotals, scoreSpread,
+  sparePinsLost, scoreSwing, rollingAverage, strikeChains,
 } from '../stats.js';
 import { milestones, nextMilestones, milestoneProgress } from '../milestones.js';
 import { lineChart, barList, calendarHeat } from '../charts.js';
@@ -19,7 +20,12 @@ import { HITS, infoButton, carryNote } from '../terms.js';
 import { topbar, tipsHTML, kvRow, icon } from '../ui.js';
 import { esc, fmtPct, fmtDate, fmtShortDate, fmtMonth, pct, plural, go, avg, fmtSpeed, SPEED_UNITS } from '../util.js';
 
-const filters = { days: 0, center: '', ball: '', oil: '' };
+const NO_FILTERS = { days: 0, center: '', ball: '', oil: '', kind: '' };
+const filters = { ...NO_FILTERS };
+const ROLL = 5;          // games in the rolling average on the score chart
+const ROLL_FROM = 6;     // games before the rolling average is drawn
+const COST_SHOWN = 5;    // pins a game that missed spares must cost before Overview mentions it
+const COST_MIN_GAMES = 3; // ...and the finished games it needs first
 let month = null; // 'YYYY-MM' shown on Monthly; the latest month until you pick another
 const MIN_COMBO = 3;
 const MIN_CARRY = 5; // pocket hits before the carry card shows its numbers
@@ -35,7 +41,7 @@ const OWN_DATES = ['monthly', 'lifetime'];
 
 // Opens Stats on Overview, filtered to one center (from a session's screen).
 export function showStatsFor({ center = '' } = {}) {
-  Object.assign(filters, { days: 0, center, ball: '', oil: '' });
+  Object.assign(filters, NO_FILTERS, { center });
   tab = 'overview';
   go('#/stats');
 }
@@ -43,7 +49,7 @@ export function showStatsFor({ center = '' } = {}) {
 // Opens Stats on one tab with no filters, scrolled to the card `anchor` if given (the summary's
 // milestone pill opens Lifetime at Milestones).
 export function showStatsTab(key, anchor = null) {
-  Object.assign(filters, { days: 0, center: '', ball: '', oil: '' });
+  Object.assign(filters, NO_FILTERS);
   tab = key;
   scrollToCard = anchor;
   go('#/stats');
@@ -63,7 +69,19 @@ const METRICS = [
 const STATE_WORD = { better: 'Better', worse: 'Worse', same: 'Same' };
 
 const table = (inner, cls = '') => `<div class="tbl-wrap"><table class="tbl${cls ? ` ${cls}` : ''}">${inner}</table></div>`;
-const tile = (value, label) => `<div class="tile"><div class="tv">${value}</div><div class="tl">${label}</div></div>`;
+const tile = (value, label, change = '') => `<div class="tile"><div class="tv">${value}</div><div class="tl">${label}</div>${change}</div>`;
+const tileCount = (made, chances) => (chances ? `<div class="tc"><span>${made} of ${chances}</span></div>` : '');
+const MONTHS_SHOWN = 12; // months in the Month by month table before the rest fold away
+
+// "▲ 24 vs Sep" under a tile: the change from `before` to `now`, green when it's better (`up`:
+// higher is better, false: lower is better, null: neither, as for games played).
+function tileChange(now, before, vs, { up = true, digits = 0, unit = '' } = {}) {
+  if (now == null || before == null) return '';
+  const d = Number((now - before).toFixed(digits));
+  const state = d === 0 || up === null ? 'same' : (d > 0) === up ? 'better' : 'worse';
+  const text = d === 0 ? '= same' : `${d > 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(digits)}${unit}`;
+  return `<div class="tc trend ${state}">${text} <span>vs ${vs}</span></div>`;
+}
 
 function progressRows(p) {
   return METRICS.map((m) => {
@@ -153,20 +171,25 @@ function calendarCard(sessions, st) {
 
 const STREAK_NAMES ={ 2: 'a double', 3: 'a turkey', 12: 'a perfect game!' };
 
+// A best game or session as a row that opens it, dated on the right.
+function bestRow(label, value, entry, sub = '') {
+  const href = entry.game ? `#/summary/${entry.session.id}/${entry.game.id}` : `#/session/${entry.session.id}`;
+  return kvRow(label, value, { sub, side: fmtShortDate(entry.session.date), href });
+}
+
 function bestsCard(b) {
   if (!b) return '';
-  const row = (label, value, entry, note = '') => kvRow(label, value, { note, side: fmtShortDate(entry.session.date) });
   const streak = b.streak.streak;
   return `
     <section class="card" id="bests">
       <div class="card-h"><h3>Personal bests</h3><small>date first set</small></div>
-      <ul class="kv">
-        ${row('High game', b.high.score, b.high)}
-        ${b.session ? row('Best session average', Math.round(b.session.average), b.session, plural(b.session.games, 'game')) : ''}
-        ${row('Most strikes in a game', b.strikes.strikes, b.strikes)}
-        ${streak ? row('Strikes in a row', streak, b.streak, STREAK_NAMES[streak] ?? (streak >= 4 ? `a ${streak}-bagger` : '')) : ''}
-        ${row('Fewest open frames', b.fewestOpens.opens, b.fewestOpens, b.fewestOpens.opens === 0 ? 'a clean game!' : '')}
-        ${b.series ? row('High series', b.series.score, b.series, '3 games') : ''}
+      <ul class="kv side linked">
+        ${bestRow('High game', b.high.score, b.high)}
+        ${b.session ? bestRow('Best session average', Math.round(b.session.average), b.session, plural(b.session.games, 'game')) : ''}
+        ${bestRow('Most strikes in a game', b.strikes.strikes, b.strikes)}
+        ${streak ? bestRow('Strikes in a row', streak, b.streak, STREAK_NAMES[streak] ?? (streak >= 4 ? `a ${streak}-bagger` : '')) : ''}
+        ${bestRow('Fewest open frames', b.fewestOpens.opens, b.fewestOpens, b.fewestOpens.opens === 0 ? 'a clean game!' : '')}
+        ${b.series ? bestRow('High series', b.series.score, b.series, '3 games') : ''}
       </ul>
     </section>`;
 }
@@ -176,6 +199,9 @@ function trendCard(st, perSession) {
   const points = by === 'session'
     ? perSession.map((x) => ({ value: Math.round(x.average), label: `${fmtDate(x.session.date)} · ${plural(x.games, 'game')}` }))
     : st.games.map((g) => ({ value: g.game.score, label: `${fmtDate(g.session.date)} · game ${g.number}` }));
+  // Per game, a rolling average shows the trend through one-off good and bad games.
+  const smooth = by === 'game' && points.length >= ROLL_FROM ? rollingAverage(points.map((x) => x.value), ROLL) : null;
+  const swing = scoreSwing(st);
   const html = `
     <section class="card">
       <div class="card-h"><h3>${by === 'session' ? 'Average by session' : 'Score by game'}</h3><small>tap the chart for details</small></div>
@@ -184,6 +210,8 @@ function trendCard(st, perSession) {
         <button type="button" class="chip${by === 'game' ? ' on' : ''}" data-by="game" aria-pressed="${by === 'game'}">Each game</button>
       </div>
       ${points.length >= 2 ? '<div id="trend"></div>' : `<p class="hint">Bowl at least 2 ${by === 'session' ? 'sessions' : 'games'} to see a trend.</p>`}
+      ${smooth ? `<p class="c-legend" id="trendLegend"><span><i class="faint"></i>Each game</span><span><i class="avg"></i>${ROLL}-game average</span></p>` : ''}
+      ${swing ? `<p class="hint" id="swing">Most games land within <strong>±${swing.sd} pins</strong> of your average (${swing.within} of ${swing.games}).</p>` : ''}
       <details class="table-view">
         <summary>Show as table</summary>
         ${by === 'session' ? table(`
@@ -194,7 +222,7 @@ function trendCard(st, perSession) {
           <tbody>${st.games.slice().reverse().map((g) => `<tr><td>${fmtDate(g.session.date)}</td><td>${g.number}</td><td class="num">${g.game.score}</td></tr>`).join('')}</tbody>`)}
       </details>
     </section>`;
-  return { html, points };
+  return { html, points, smooth };
 }
 
 function linesCard(st) {
@@ -230,7 +258,7 @@ function accuracyCard(a) {
   return `
     <section class="card" id="accuracy">
       <div class="card-h"><h3>How repeatable is your shot?</h3><small>1st balls</small></div>
-      <ul class="kv">${rows.join('')}</ul>
+      <ul class="kv side">${rows.join('')}</ul>
       <p class="hint">Repeating the same feet and arrow matters more than finding a perfect line. To track your aim, tag "Hit my arrow" or "Missed left/right" (What to log: Everything).</p>
     </section>`;
 }
@@ -267,7 +295,7 @@ function carryCard(st, hand) {
   return `
     <section class="card" id="carry">
       ${head}
-      <ul class="kv">${kvRow('Strikes on pocket hits', fmtPct(c.strikes, c.pocket), { side: `${c.strikes} of ${c.pocket}` })}</ul>
+      <ul class="kv side">${kvRow('Strikes on pocket hits', fmtPct(c.strikes, c.pocket), { side: `${c.strikes} of ${c.pocket}` })}</ul>
       ${known.length ? `
         <ul class="carry-list">${known.map(({ l, note }) => `
           <li>
@@ -279,6 +307,27 @@ function carryCard(st, hand) {
           </li>`).join('')}</ul>` : ''}
       ${other ? `<p class="hint">${plural(other, 'other leave')}, unusual after a pocket hit: check the Pin hit you recorded for those balls.</p>` : ''}
       ${c.leaves.length ? '' : '<p class="hint">Every pocket hit was a strike. 🎳</p>'}
+    </section>`;
+}
+
+// Strikes after strikes (doubles) against strikes after anything else, and the 10th frame.
+function chainsCard(st) {
+  if (st.games.length < 3) return '';
+  const { afterStrike: a, afterOther: o, tenth: t } = strikeChains(st);
+  const rate = (x) => pct(x.strikes, x.n);
+  const gap = a.n >= 5 && o.n >= 5 ? rate(a) - rate(o) : 0;
+  const note = gap >= 10 ? 'Your strikes come in bunches: once you find the pocket, stay on that line and speed.'
+    : gap <= -10 ? 'You strike less often right after a strike. Keep the same feet, arrow and speed on the next ball instead of changing.'
+    : '';
+  return `
+    <section class="card" id="chains">
+      <div class="card-h"><h3>Strikes in a row &amp; the 10th</h3></div>
+      <ul class="kv side">
+        ${kvRow(`Strike after a strike ${infoButton('double')}`, fmtPct(a.strikes, a.n), { sub: 'a double', side: `${a.strikes} of ${a.n}` })}
+        ${kvRow('Strike after a spare or open', fmtPct(o.strikes, o.n), { side: `${o.strikes} of ${o.n}` })}
+        ${kvRow(`Mark in the 10th frame ${infoButton('mark')}`, fmtPct(t.marks, t.n), { sub: 'a strike or a spare', side: `${t.marks} of ${t.n}` })}
+      </ul>
+      ${note ? `<p class="hint">${note}</p>` : ''}
     </section>`;
 }
 
@@ -308,7 +357,7 @@ function speedCard(st) {
   return `
     <section class="card" id="speedCard">
       <div class="card-h"><h3>Ball speed</h3>${infoButton('speed')}</div>
-      <ul class="kv">
+      <ul class="kv side">
         ${kvRow('Average', fmtSpeed(st.speedAvg, unit), { side: plural(st.speedCount, 'ball') })}
         ${st.speedSD !== null ? kvRow('Typical change ball to ball', `±${fmtSpeed(st.speedSD, unit)}`, { side: st.speedSD < 0.6 ? 'steady' : '' }) : ''}
       </ul>
@@ -411,6 +460,8 @@ function monthCompareCard(cur, prev) {
     <section class="card" id="monthCompare">
       <div class="card-h"><h3>vs ${fmtMonth(prev.key)}</h3><small>${plural(prev.st.games.length, 'game')} then</small></div>
       <p class="verdict">${line}</p>
+      <details class="table-view" id="monthTable">
+        <summary>Compare all stats with ${fmtMonth(prev.key, 'short')}</summary>
       ${table(`
         <thead><tr><th></th><th class="num">${a}</th><th class="num">${b}</th><th class="num">Change</th></tr></thead>
         <tbody>${rows.map((r) => `
@@ -420,33 +471,44 @@ function monthCompareCard(cur, prev) {
             <td class="num"><strong>${r.to}</strong></td>
             <td class="num trend ${r.state}">${r.mark} ${STATE_WORD[r.state]}</td>
           </tr>`).join('')}</tbody>`, 'progress')}
+      </details>
     </section>`;
 }
 
 function monthBestsCard(st) {
   const b = personalBests(st);
-  const side = (entry) => fmtShortDate(entry.session.date);
-  const high = `<a href="#/summary/${b.high.session.id}/${b.high.game.id}">${b.high.score}</a>`;
   return `
     <section class="card" id="monthBests">
       <div class="card-h"><h3>Best of the month</h3></div>
-      <ul class="kv">
-        ${kvRow('High game', high, { side: side(b.high) })}
-        ${kvRow('Most strikes in a game', b.strikes.strikes, { side: side(b.strikes) })}
-        ${b.session ? kvRow('Best session average', Math.round(b.session.average), { note: plural(b.session.games, 'game'), side: side(b.session) }) : ''}
-        ${kvRow('Fewest open frames', b.fewestOpens.opens, { note: b.fewestOpens.opens === 0 ? 'a clean game!' : '', side: side(b.fewestOpens) })}
+      <ul class="kv side linked">
+        ${bestRow('High game', b.high.score, b.high)}
+        ${bestRow('Most strikes in a game', b.strikes.strikes, b.strikes)}
+        ${b.session ? bestRow('Best session average', Math.round(b.session.average), b.session, plural(b.session.games, 'game')) : ''}
+        ${bestRow('Fewest open frames', b.fewestOpens.opens, b.fewestOpens, b.fewestOpens.opens === 0 ? 'a clean game!' : '')}
       </ul>
     </section>`;
 }
 
 function monthsCard(months) {
+  const newest = months.slice().reverse();
+  const older = newest.slice(MONTHS_SHOWN);
   return `
     <section class="card" id="months">
       <div class="card-h"><h3>Month by month</h3><small>tap a month to open it</small></div>
       ${months.length >= 2 ? '<div id="monthTrend"></div>' : ''}
-      ${table(`
+      ${monthTable(newest.slice(0, MONTHS_SHOWN))}
+      ${older.length ? `
+        <details class="table-view" id="olderMonths">
+          <summary>Older months (${older.length})</summary>
+          ${monthTable(older)}
+        </details>` : ''}
+    </section>`;
+}
+
+function monthTable(list) {
+  return table(`
         <thead><tr><th>Month</th><th class="num">Games</th><th class="num">Avg</th><th class="num">High</th><th class="num">Strikes</th><th class="num">Spares</th></tr></thead>
-        <tbody>${months.slice().reverse().map((m) => `
+        <tbody>${list.map((m) => `
           <tr class="month-row${m.key === month ? ' on' : ''}" data-month-key="${m.key}" data-top>
             <td><button type="button" class="link" aria-label="Open ${fmtMonth(m.key)}"${m.key === month ? ' aria-current="true"' : ''}>${fmtMonth(m.key, 'short')}</button></td>
             <td class="num">${m.st.games.length}</td>
@@ -454,8 +516,7 @@ function monthsCard(months) {
             <td class="num">${m.st.high}</td>
             <td class="num">${fmtPct(m.st.strikes, m.st.firstBalls)}</td>
             <td class="num">${fmtPct(m.st.sparesMade, m.st.spareChances)}</td>
-          </tr>`).join('')}</tbody>`)}
-    </section>`;
+          </tr>`).join('')}</tbody>`);
 }
 
 function monthlyBody(months) {
@@ -464,6 +525,14 @@ function monthlyBody(months) {
   const prev = months[i - 1] ?? null;
   const next = months[i + 1] ?? null;
   const st = cur.st;
+  // The tiles' numbers for a month, to show how this one changed from the one before.
+  const nums = (x) => ({
+    average: Math.round(x.average), high: x.high, games: x.games.length, strikes: pct(x.strikes, x.firstBalls),
+    spares: pct(x.sparesMade, x.spareChances), opens: Number((x.opens / x.games.length).toFixed(1)),
+  });
+  const now = nums(st);
+  const before = prev ? nums(prev.st) : null;
+  const vs = (key, opts) => (before ? tileChange(now[key], before[key], fmtMonth(prev.key, 'short'), opts) : '');
   const step = (m, id, label, ico) => `<button type="button" class="btn" id="${id}" aria-label="${label}"${m ? ` data-month-key="${m.key}"` : ' disabled'}>${icon(ico, 22)}</button>`;
   return `
     <div class="month-nav">
@@ -471,13 +540,13 @@ function monthlyBody(months) {
       <div class="month-title"><strong id="monthName">${fmtMonth(cur.key)}</strong><small>${plural(cur.days, 'day')} bowled</small></div>
       ${step(next, 'monthNext', 'Month after', 'chevR')}
     </div>
-    <div class="tiles">
-      ${tile(Math.round(st.average), 'Average')}
-      ${tile(st.high, 'High game')}
-      ${tile(st.games.length, 'Games')}
-      ${tile(fmtPct(st.strikes, st.firstBalls), 'Strikes')}
-      ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made')}
-      ${tile((st.opens / st.games.length).toFixed(1), 'Open frames a game')}
+    <div class="tiles" id="monthTiles">
+      ${tile(Math.round(st.average), 'Average', vs('average'))}
+      ${tile(st.high, 'High game', vs('high'))}
+      ${tile(st.games.length, 'Games', vs('games', { up: null }))}
+      ${tile(fmtPct(st.strikes, st.firstBalls), 'Strikes', vs('strikes'))}
+      ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made', vs('spares'))}
+      ${tile((st.opens / st.games.length).toFixed(1), 'Open frames a game', vs('opens', { up: false, digits: 1 }))}
     </div>
     ${monthCompareCard(cur, prev)}
     ${monthBestsCard(st)}
@@ -486,23 +555,21 @@ function monthlyBody(months) {
 
 // ---------- Lifetime ----------
 
-function totalsCard(st, t) {
+// What the tiles and Overview's Personal bests don't already show.
+function soFarCard(t) {
   const center = t.centers[0];
   const ball = t.balls[0];
+  const since = new Date(`${t.firstDate}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return `
     <section class="card" id="lifetime">
-      <div class="card-h"><h3>Totals</h3></div>
+      <div class="card-h"><h3>Your bowling so far</h3></div>
       <ul class="kv">
-        ${kvRow('Average', Math.round(st.average))}
-        ${kvRow('High game', st.high)}
-        ${t.highSeries ? kvRow('High series', t.highSeries, { note: '3 games' }) : ''}
+        ${kvRow('Bowling since', since, { sub: `${plural(t.sessions, 'session')} · ${plural(t.days, 'day')} bowled`, text: true })}
         ${kvRow('Frames bowled', t.frames.toLocaleString())}
-        ${kvRow('Spares made', t.sparesMade, { note: `of ${t.spareChances}` })}
         ${kvRow('Splits picked up', t.splitsMade)}
-        ${kvRow(`Clean games ${infoButton('clean')}`, t.cleanGames)}
-        ${kvRow('Days bowled', t.days, { note: plural(t.sessions, 'session') })}
-        ${center ? kvRow('Centers', t.centers.length, { note: `most at ${esc(center.name)} (${plural(center.games, 'game')})` }) : ''}
-        ${ball ? kvRow('Favorite ball', esc(ball.name), { note: plural(ball.games, 'game') }) : ''}
+        ${kvRow(`Clean games ${infoButton('clean')}`, t.cleanGames, { sub: 'no open frames' })}
+        ${center ? kvRow('Centers', t.centers.length, { sub: `most at ${esc(center.name)} · ${plural(center.games, 'game')}` }) : ''}
+        ${ball ? kvRow('Favorite ball', esc(ball.name), { sub: plural(ball.games, 'game'), text: true }) : ''}
       </ul>
     </section>`;
 }
@@ -522,31 +589,26 @@ function milestonesCard() {
   const got = list.filter((m) => m.done).sort((a, b) => b.done.date.localeCompare(a.done.date));
   const next = nextMilestones(list);
   const locked = list.filter((m) => !m.done);
-  const row = (m) => `
-    <li>
-      <a class="kv-label" href="#/summary/${m.done.sid}/${m.done.gid}">${esc(m.label)}</a>
-      <span class="kv-date">${fmtShortDate(m.done.date)}</span>
-      <span class="chev" aria-hidden="true">${icon('chevR', 16)}</span>
-    </li>`;
-  const todo = (m) => `<li class="locked"><span class="kv-label">${esc(m.label)}</span><span class="kv-note">${milestoneProgress(m)}</span></li>`;
+  const row = (m) => kvRow(esc(m.label), '', { side: fmtShortDate(m.done.date), href: `#/summary/${m.done.sid}/${m.done.gid}` });
+  const todo = (m) => kvRow(esc(m.label), milestoneProgress(m), { text: true });
   return `
     <section class="card" id="milestones">
       <div class="card-h"><h3>Milestones</h3><small>${got.length} of ${list.length}</small></div>
       ${next.length ? `
         <h4 class="sub-h">Next up</h4>
-        <ul class="kv milestone-list" id="nextUp">${next.map(todo).join('')}</ul>` : ''}
+        <ul class="kv todo" id="nextUp">${next.map(todo).join('')}</ul>` : ''}
       ${got.length ? `
         <h4 class="sub-h">Reached</h4>
-        <ul class="kv milestone-list" id="reached">${got.slice(0, REACHED_SHOWN).map(row).join('')}</ul>` : ''}
+        <ul class="kv side linked" id="reached">${got.slice(0, REACHED_SHOWN).map(row).join('')}</ul>` : ''}
       ${got.length > REACHED_SHOWN ? `
         <details class="table-view" id="reachedEarlier">
           <summary>Earlier (${got.length - REACHED_SHOWN})</summary>
-          <ul class="kv milestone-list">${got.slice(REACHED_SHOWN).map(row).join('')}</ul>
+          <ul class="kv side linked">${got.slice(REACHED_SHOWN).map(row).join('')}</ul>
         </details>` : ''}
       ${locked.length ? `
         <details class="table-view">
           <summary>Still to reach (${locked.length})</summary>
-          <ul class="kv milestone-list">${locked.map(todo).join('')}</ul>
+          <ul class="kv todo">${locked.map(todo).join('')}</ul>
         </details>` : ''}
       <p class="hint">Milestones count all your games, whatever the filters above. Tap one to open the game where you reached it.</p>
     </section>`;
@@ -555,7 +617,6 @@ function milestonesCard() {
 function lifetimeBody(st) {
   const t = lifetimeTotals(st);
   return `
-    <p class="meta" id="lifetimeSince">Since ${fmtDate(t.firstDate)} · ${plural(t.sessions, 'session')} · ${plural(t.days, 'day')} bowled</p>
     <div class="tiles">
       ${tile(t.games.toLocaleString(), 'Games')}
       ${tile(t.pins.toLocaleString(), 'Total pins')}
@@ -564,9 +625,34 @@ function lifetimeBody(st) {
       ${tile(t.turkeys, `Turkeys ${infoButton('turkey')}`)}
       ${tile(t.over200, '200+ games')}
     </div>
-    ${totalsCard(st, t)}
+    ${soFarCard(t)}
     ${spreadCard(st)}
     ${milestonesCard()}`;
+}
+
+// A filter box only shows when there's something to pick between (or it's in use).
+const hideIf = (values, selected) => (values.length < 2 && !selected ? ' hidden' : '');
+
+// One line on Overview when missed spares cost enough to mention; it opens Spares.
+function spareCostLine(st) {
+  const lost = st.games.length >= COST_MIN_GAMES ? sparePinsLost(st) : null;
+  if (!lost || lost.all < COST_SHOWN) return '';
+  return `<button type="button" class="link stat-link" id="sparesCost" data-goto="spares">Missed spares cost you about ${Math.round(lost.all)} pins a game →</button>`;
+}
+
+function spareCostCard(lost) {
+  if (!lost) return '';
+  const all = Math.round(lost.all);
+  return `
+    <section class="card" id="spareCost">
+      <div class="card-h"><h3>What missed spares cost</h3><small>pins a game</small></div>
+      ${all === 0 ? '<p class="hint">You made every spare you had a chance at. Nothing lost!</p>' : `
+      <ul class="kv">
+        ${kvRow('Missed spares', all, { sub: 'if you\'d made every one' })}
+        ${kvRow('Missed single pins', Math.round(lost.singles), { sub: 'the easiest ones to fix' })}
+      </ul>
+      <p class="hint">A missed spare costs the pins left standing and the bonus your next ball would have added.</p>`}
+    </section>`;
 }
 
 function options(values, selected, allLabel) {
@@ -582,11 +668,14 @@ export function render(root) {
   if (!centers.includes(filters.center)) filters.center = '';
   if (!balls.includes(filters.ball)) filters.ball = '';
   if (!oils.includes(filters.oil)) filters.oil = '';
+  // League nights or the rest: only worth offering when there are both.
+  const kinds = db.settings.league.on && db.sessions.some((x) => x.league) && db.sessions.some((x) => !x.league) ? ['league', 'other'] : [];
+  if (!kinds.includes(filters.kind)) filters.kind = '';
   const ownDates = OWN_DATES.includes(tab);
   const sessions = filterSessions(db.sessions, ownDates ? { ...filters, days: 0 } : filters);
   const st = computeStats(sessions);
   const hints = tips(st, db.settings.hand, sessions, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand));
-  const filtered = (!ownDates && filters.days) || filters.center || filters.ball || filters.oil;
+  const filtered = (!ownDates && filters.days) || filters.center || filters.ball || filters.oil || filters.kind;
   const practiced = db.practice.length;
   const practiceMade = db.practice.filter((p) => p.made).length;
 
@@ -611,6 +700,7 @@ export function render(root) {
         ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made')}
         ${tile((st.opens / st.games.length).toFixed(1), 'Open frames a game')}
       </div>
+      ${spareCostLine(st)}
       ${progressCard(progress(sessions), st.games.length)}
       ${calendarCard(sessions, st)}
       ${bestsCard(personalBests(st))}
@@ -627,17 +717,21 @@ export function render(root) {
       ${accuracyCard(st.accuracy)}
       ${hitsCard(st)}
       ${carryCard(st, db.settings.hand)}
+      ${chainsCard(st)}
       ${byGameCard(st.byGame)}
       ${speedCard(st)}`;
   } else if (tab === 'spares') {
     body = `
-      <div class="tiles">
-        ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made')}
-        ${tile(fmtPct(st.singleMade, st.singleChances), '1-pin spares')}
-        ${tile(fmtPct(practiceMade, practiced), 'Practice, all leaves')}
+      <div class="tiles pairs" id="spareTiles">
+        ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made', tileCount(st.sparesMade, st.spareChances))}
+        ${tile(fmtPct(st.singleMade, st.singleChances), '1-pin spares', tileCount(st.singleMade, st.singleChances))}
+        ${tile(fmtPct(st.multiMade, st.multiChances), `Multi-pin spares ${infoButton('multiPin')}`, tileCount(st.multiMade, st.multiChances))}
+        ${tile(fmtPct(st.splitMade, st.splitChances), `Splits made ${infoButton('split')}`, tileCount(st.splitMade, st.splitChances))}
       </div>
+      ${spareCostCard(sparePinsLost(st))}
       ${tipsHTML(hints.filter((t) => t.topic === 'spares'))}
       ${leavesCard(st, db.settings.hand)}
+      ${practiced ? `<p class="meta" id="practiceLine">Spare practice: ${practiceMade} of ${practiced} made (${fmtPct(practiceMade, practiced)})</p>` : ''}
       <a class="btn block" href="#/practice">Go to Spare practice</a>`;
   } else {
     body = feelCard(st);
@@ -652,9 +746,15 @@ export function render(root) {
           <option value="30"${filters.days === 30 ? ' selected' : ''}>Last 30 days</option>
           <option value="90"${filters.days === 90 ? ' selected' : ''}>Last 90 days</option>
         </select>
-        <select id="fCenter" aria-label="Bowling center">${options(centers, filters.center, 'All centers')}</select>
-        <select id="fBall" aria-label="Ball">${options(balls, filters.ball, 'All balls')}</select>
-        <select id="fOil" aria-label="Oil pattern">${options(oils, filters.oil, 'All oil patterns')}</select>
+        <select id="fCenter" aria-label="Bowling center"${hideIf(centers, filters.center)}>${options(centers, filters.center, 'All centers')}</select>
+        <select id="fBall" aria-label="Ball"${hideIf(balls, filters.ball)}>${options(balls, filters.ball, 'All balls')}</select>
+        <select id="fOil" aria-label="Oil pattern"${hideIf(oils, filters.oil)}>${options(oils, filters.oil, 'All oil patterns')}</select>
+        <select id="fKind" aria-label="League or other bowling"${hideIf(kinds, filters.kind)}>
+          <option value="">All bowling</option>
+          <option value="league"${filters.kind === 'league' ? ' selected' : ''}>League nights</option>
+          <option value="other"${filters.kind === 'other' ? ' selected' : ''}>Other bowling</option>
+        </select>
+        ${filtered ? '<button type="button" class="link" id="clearFilters">Clear filters</button>' : ''}
       </div>
 
       ${st.games.length === 0 ? `
@@ -669,7 +769,7 @@ export function render(root) {
     </div>`;
 
   if (trend && trend.points.length >= 2) {
-    lineChart(root.querySelector('#trend'), trend.points, { refValue: Math.round(st.average), refLabel: 'avg' });
+    lineChart(root.querySelector('#trend'), trend.points, { refValue: Math.round(st.average), refLabel: 'avg', smooth: trend.smooth, smoothLabel: `${ROLL}-game avg` });
   }
   // The tab strip scrolls sideways on narrow phones; keep the open tab in sight.
   const strip = root.querySelector('.subtabs');
@@ -707,8 +807,24 @@ export function render(root) {
     };
   });
 
+  const clear = root.querySelector('#clearFilters');
+  if (clear) {
+    clear.onclick = () => {
+      Object.assign(filters, NO_FILTERS);
+      render(root);
+    };
+  }
   root.querySelector('#fDays').onchange = (e) => { filters.days = Number(e.target.value); render(root); };
   root.querySelector('#fCenter').onchange = (e) => { filters.center = e.target.value; render(root); };
   root.querySelector('#fBall').onchange = (e) => { filters.ball = e.target.value; render(root); };
   root.querySelector('#fOil').onchange = (e) => { filters.oil = e.target.value; render(root); };
+  root.querySelector('#fKind').onchange = (e) => { filters.kind = e.target.value; render(root); };
+  // Links that open another tab (Overview's line about missed spares).
+  root.querySelectorAll('[data-goto]').forEach((el) => {
+    el.onclick = () => {
+      tab = el.dataset.goto;
+      render(root);
+      window.scrollTo({ top: 0 });
+    };
+  });
 }

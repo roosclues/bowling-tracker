@@ -117,7 +117,7 @@ export function moveGame(session, game, date, targetId = null) {
     into = session;
   } else {
     session.games.splice(session.games.indexOf(game), 1);
-    into = { id: uid(), date, center: session.center, lane: session.lane, ball: session.ball, oil: session.oil, notes: '', games: [game] };
+    into = { id: uid(), date, center: session.center, lane: session.lane, ball: session.ball, oil: session.oil, notes: '', league: !!session.league, games: [game] };
     db.sessions.push(into);
   }
   for (const goal of db.settings.goals) {
@@ -276,7 +276,7 @@ function csvCell(v) {
 
 export async function exportCSV({ share = false } = {}) {
   const header = ['date', 'center', 'lane', 'ball', 'oil', 'game', 'game_score', 'frame', 'ball_in_frame',
-    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed_mph', 'tags', 'note', 'session_notes'];
+    'pins_down', 'pins_left', 'feet_board', 'arrow_board', 'breakpoint_board', 'pin_hit', 'speed_mph', 'tags', 'note', 'session_notes', 'league'];
   const rows = [header];
   for (const s of db.sessions) {
     s.games.forEach((g, gi) => {
@@ -285,7 +285,7 @@ export async function exportCSV({ share = false } = {}) {
         shots.forEach((shot, si) => {
           rows.push([s.date, s.center, s.lane, s.ball, s.oil, gi + 1, g.score, fi + 1, si + 1, k[si],
             shot.standing.join(' '), shot.feet, shot.target, shot.breakpoint, shot.hit, shot.speed,
-            (shot.tags || []).join('; '), shot.note, s.notes]);
+            (shot.tags || []).join('; '), shot.note, s.notes, s.league ? 'yes' : '']);
         });
       });
     });
@@ -293,7 +293,7 @@ export async function exportCSV({ share = false } = {}) {
   // Spare practice tries follow, with "practice" in the game column.
   for (const p of db.practice) {
     rows.push([p.date, '', '', '', '', 'practice', '', '', 2, p.made ? p.leave.length : '',
-      p.made ? '' : p.leave.join(' '), p.feet, p.target, '', '', '', '', '', '']);
+      p.made ? '' : p.leave.join(' '), p.feet, p.target, '', '', '', '', '', '', '']);
   }
   const text = rows.map((r) => r.map(csvCell).join(',')).join('\r\n');
   await deliver(new Blob(['﻿' + text], { type: 'text/csv' }), `bowling-shots-${todayISO()}.csv`, share);

@@ -6,7 +6,54 @@ import {
 import { infoButton, logLabel } from '../terms.js';
 import { topbar, icon, logChips } from '../ui.js';
 import { APP_VERSION, versionDate } from '../version.js';
-import { fmtDate, toast, go, plural, SPEED_UNITS } from '../util.js';
+import { fmtDate, toast, go, plural, SPEED_UNITS, esc } from '../util.js';
+import { leagueStanding, LEAGUE_MIN_GAMES, LEAGUE_ESTABLISH } from '../stats.js';
+
+const LEAGUE_PCTS = [80, 90, 100];
+
+// "Your book average: 168 (12 league games) · handicap 46 a game".
+function leagueNow() {
+  const st = leagueStanding(db.sessions, db.settings.league);
+  if (st.average == null) return `Your handicap starts after ${LEAGUE_MIN_GAMES} league games (${st.games} so far).`;
+  return `Your book average: <strong>${st.average}</strong> (${st.typed ? 'from your league sheet' : plural(st.games, 'league game')}) · handicap <strong>${st.handicap}</strong> a game`;
+}
+
+function leagueCard() {
+  const L = db.settings.league;
+  const pcts = LEAGUE_PCTS.includes(L.pct) ? LEAGUE_PCTS : [...LEAGUE_PCTS, L.pct].sort((a, b) => a - b);
+  return `
+      <section class="card" id="leagueCard">
+        <div class="card-h"><h3>League</h3>${infoButton('handicap')}</div>
+        <label class="switch-row">
+          <span><span class="sw-label">I bowl in a league</span><span class="hint">Adds a League night switch when you start a session, and works out your league average and handicap.</span></span>
+          <input type="checkbox" class="switch" id="leagueOn"${L.on ? ' checked' : ''}>
+        </label>
+        ${L.on ? `
+        <p class="meta" id="leagueNow" aria-live="polite">${leagueNow()}</p>
+        <div class="field">
+          <label for="leaguePct">Handicap</label>
+          <div class="league-rule">
+            <select id="leaguePct" aria-label="Handicap percentage">${pcts.map((v) => `<option value="${v}"${v === L.pct ? ' selected' : ''}>${v}%</option>`).join('')}</select>
+            <span>of</span>
+            <input id="leagueBase" type="number" inputmode="numeric" min="150" max="300" value="${L.base}" aria-label="Handicap base score">
+          </div>
+          <p class="hint">Handicap = (base − your average) × that percentage, rounded down. Your league sheet says which numbers your league uses.</p>
+        </div>
+        <details class="table-view" id="leagueMore"${L.seasonStart || L.average != null ? ' open' : ''}>
+          <summary>Season start, sheet average (optional)</summary>
+          <div class="field">
+            <label for="leagueSeason">Season started</label>
+            <input id="leagueSeason" type="date" value="${esc(L.seasonStart ?? '')}">
+            <p class="hint">Only league nights from this date count. Leave it empty to count them all.</p>
+          </div>
+          <div class="field">
+            <label for="leagueAvg">Average from your league sheet ${infoButton('bookAverage')}</label>
+            <input id="leagueAvg" type="number" inputmode="numeric" min="0" max="300" placeholder="Worked out from your league games" value="${L.average ?? ''}">
+            <p class="hint">Used until you've logged ${LEAGUE_ESTABLISH} league games this season. After that the app uses your own games.</p>
+          </div>
+        </details>` : ''}
+      </section>`;
+}
 
 // Ask the service worker to look for a newer version now. If one exists it downloads in the
 // background, and app.js shows "App updated" once it's ready.
@@ -70,6 +117,8 @@ export function render(root) {
         <p class="hint">What the game screen asks for on each ball. Anything you skip can be filled in from the game summary.</p>
         <div class="seg full">${logChips(db.settings.log)}</div>
       </section>
+
+      ${leagueCard()}
 
       <section class="card">
         <h3>Theme</h3>
@@ -212,6 +261,32 @@ export function render(root) {
       e.target.value = '';
     }
   });
+
+  // League: the switch shows or hides the rest of the card; the other boxes save as you type.
+  const L = db.settings.league;
+  root.querySelector('#leagueOn').addEventListener('change', (e) => {
+    L.on = e.target.checked;
+    save();
+    render(root);
+    toast(L.on ? 'League tools on' : 'League tools off');
+  });
+  const leagueInput = (sel, apply) => root.querySelector(sel)?.addEventListener('input', (e) => {
+    apply(e.target.value);
+    save();
+    root.querySelector('#leagueNow').innerHTML = leagueNow();
+  });
+  const whole = (v, min, max) => {
+    const n = Number(v);
+    return v !== '' && Number.isInteger(n) && n >= min && n <= max ? n : null;
+  };
+  leagueInput('#leaguePct', (v) => { L.pct = Number(v); });
+  leagueInput('#leagueBase', (v) => { L.base = whole(v, 150, 300) ?? L.base; });
+  leagueInput('#leagueSeason', (v) => { L.seasonStart = v || null; });
+  leagueInput('#leagueAvg', (v) => { L.average = whole(v, 0, 300); });
+  // Leaving a box with a number that wasn't saved puts the saved one back, so what you see is used.
+  const snapBack = (sel, value) => root.querySelector(sel)?.addEventListener('change', (e) => { e.target.value = value() ?? ''; });
+  snapBack('#leagueBase', () => L.base);
+  snapBack('#leagueAvg', () => L.average);
 
   root.querySelectorAll('[data-setting]').forEach((input) => {
     input.addEventListener('change', () => {

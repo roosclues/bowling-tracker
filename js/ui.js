@@ -53,14 +53,18 @@ export function logChips(current) {
   return LOG_LEVELS.map((l) => `<button type="button" class="chip${current === l.key ? ' on' : ''}" data-log="${l.key}" aria-pressed="${current === l.key}">${l.label}</button>`).join('');
 }
 
-// One label/value row of a `.kv` list. `note` sits next to the value, `side` on the right.
-export function kvRow(label, value, { note = '', side = '' } = {}) {
-  return `
-    <li>
-      <span class="kv-label">${label}</span>
-      <span class="kv-val"><strong>${value}</strong>${note ? ` <span class="kv-note">${note}</span>` : ''}</span>
-      <span class="kv-date">${side}</span>
-    </li>`;
+// One row of a `.kv` stat list: the label (with an optional muted `sub` line under it), the value
+// in a right-aligned column, then `side` (a date or a count) in a fixed-width column. All values
+// in a list line up because every row has the same columns: give the list the class `side` when
+// its rows have a side column, and `linked` when they open something. With `href` the whole row
+// is a link with a chevron. `text` is for a value that's a name rather than a number.
+export function kvRow(label, value, { sub = '', side = null, href = '', text = false } = {}) {
+  const inner = `
+      <span class="kv-label">${label}${sub ? `<small class="kv-sub">${sub}</small>` : ''}</span>
+      <span class="kv-val${text ? ' text' : ''}">${value}</span>
+      ${side === null ? '' : `<span class="kv-side">${side}</span>`}
+      ${href ? `<span class="kv-chev" aria-hidden="true">${icon('chevR', 16)}</span>` : ''}`;
+  return href ? `<li><a class="kv-row" href="${href}">${inner}</a></li>` : `<li class="kv-row">${inner}</li>`;
 }
 
 // Sticky header. `back` is a hash link; `right` is extra HTML (already escaped).

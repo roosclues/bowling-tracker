@@ -2,7 +2,7 @@
 // your note on the lane). The form shows your lane notes as you type the center and lane.
 
 import { db, save, findSession, findGame, newGame, requestPersist, unstampGoals, sortSessions, moveGame } from '../storage.js';
-import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN, spareAimFor } from '../stats.js';
+import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN, spareAimFor, leagueStanding, LEAGUE_MIN_GAMES } from '../stats.js';
 import { infoButton } from '../terms.js';
 import { topbar, icon, tipsHTML, logChips } from '../ui.js';
 import { esc, uid, todayISO, fmtDate, go, toast, avg, fmtPct, plural } from '../util.js';
@@ -24,8 +24,9 @@ function distinct(field) {
 // Starts a session with its first game and opens that game. Used by the form and by Home's
 // one-tap "Bowl at …", which repeats the last center, ball and oil.
 export function startSession(fields) {
-  db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
-  const session = { id: uid(), ...fields, games: [newGame()] };
+  const league = db.settings.league.on && !!fields.league;
+  db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil, league };
+  const session = { id: uid(), ...fields, league, games: [newGame()] };
   db.sessions.push(session);
   sortSessions();
   db.settings.sessionsSinceBackup = (db.settings.sessionsSinceBackup || 0) + 1;
@@ -39,13 +40,19 @@ export function startSession(fields) {
 export function renderForm(root, sid) {
   const existing = sid ? findSession(sid) : null;
   const last = db.settings.last || {};
-  const s = existing ?? { date: todayISO(), center: last.center ?? '', lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '' };
+  const s = existing ?? { date: todayISO(), center: last.center ?? '', lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '', league: !!last.league };
   let level = db.settings.log;
+  const leagueOn = db.settings.league.on;
 
   root.innerHTML = `
     ${topbar({ back: existing ? `#/session/${existing.id}` : '#/', title: existing ? 'Edit session' : 'New session' })}
     <form class="page form" id="sessionForm" autocomplete="off">
       <div class="card">
+      ${leagueOn ? `
+      <label class="switch-row" id="leagueRow">
+        <span><span class="sw-label">League night</span><span class="hint">Counts toward your league average and handicap.</span></span>
+        <input type="checkbox" class="switch" name="league" id="leagueNight"${s.league ? ' checked' : ''}>
+      </label>` : ''}
       <div class="field">
         <label for="center">Bowling center</label>
         <input id="center" name="center" list="centers" placeholder="e.g. Strike Zone Lanes" value="${esc(s.center)}">
@@ -118,9 +125,12 @@ export function renderForm(root, sid) {
     const fields = {
       date: f.date || todayISO(), center: f.center.trim(), lane: f.lane.trim(),
       ball: f.ball.trim(), oil: f.oil, notes: f.notes.trim(),
+      // With league off the switch isn't shown, so a session keeps what it was.
+      league: leagueOn ? f.league === 'on' : !!existing?.league,
     };
     if (existing) {
-      db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
+      // Fixing an older session doesn't change what Home's "Bowl at" repeats.
+      if (existing === db.sessions.at(-1)) db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil, league: fields.league };
       Object.assign(existing, fields);
       sortSessions(); // a new date can put it before or after other sessions
       save();
@@ -234,6 +244,16 @@ export function renderMove(root, sid, gid) {
   };
 }
 
+// A league night's handicap (from the league average going into it) and its series with it.
+function leagueLine(s, series) {
+  if (!s.league || !db.settings.league.on) return '';
+  const st = leagueStanding(db.sessions, db.settings.league, s);
+  const text = st.handicap == null
+    ? `Handicap starts after ${LEAGUE_MIN_GAMES} league games (${st.games} so far).`
+    : [`Handicap ${st.handicap} a game`, series != null && `series <strong>${series + 3 * st.handicap}</strong> with handicap`].filter(Boolean).join(' · ');
+  return `<p class="meta" id="leagueLine"><span class="tag-league">League</span> ${text}</p>`;
+}
+
 // "3 strikes in 9 · 7.8 pins", plus pocket hits when enough were recorded.
 function runText(r) {
   return [`${r.strikes} ${r.strikes === 1 ? 'strike' : 'strikes'} in ${r.n}`, `${r.pins.toFixed(1)} pins`,
@@ -292,6 +312,7 @@ export function renderDetail(root, sid) {
         <div class="tile"><div class="tv">${st.games.length ? (st.opens / st.games.length).toFixed(1) : '–'}</div><div class="tl">Open frames a game</div></div>
         <div class="tile"><div class="tv">${st.firstBallAvg === null ? '–' : st.firstBallAvg.toFixed(1)}</div><div class="tl">1st-ball pins</div></div>
       </div>
+      ${leagueLine(s, series)}
       <p class="meta">${[s.lane && `Lane ${esc(s.lane)}`, s.ball && esc(s.ball), s.oil && s.oil !== 'Unknown' && esc(s.oil)].filter(Boolean).join(' · ')}</p>
       ${laneNoteRow(s)}
       ${s.notes ? `<p class="notes">${esc(s.notes)}</p>` : ''}

@@ -18,11 +18,15 @@ function niceTicks(min, max, count = 4) {
 }
 
 // points: [{ value, label }] in order. refValue draws a labeled reference line (e.g. average).
-export function lineChart(container, points, { refValue = null, refLabel = '' } = {}) {
+// smooth: optional values to draw as a second, bolder line over the points (null where it hasn't
+// started yet), e.g. a rolling average; `smoothLabel` names it in the tap readout. With it, the
+// points' own line is drawn lighter.
+export function lineChart(container, points, { refValue = null, refLabel = '', smooth = null, smoothLabel = '' } = {}) {
   const W = 340;
   const H = 180;
   const pad = { l: 34, r: 30, t: 14, b: 22 };
   const values = points.map((p) => p.value);
+  const hasSmooth = !!smooth?.some((v) => v != null);
   const ticks = niceTicks(Math.min(...values), Math.max(...values));
   const y0 = ticks[0];
   const y1 = ticks[ticks.length - 1];
@@ -33,6 +37,13 @@ export function lineChart(container, points, { refValue = null, refLabel = '' } 
     <line x1="${pad.l}" x2="${W - pad.r}" y1="${y(t)}" y2="${y(t)}" class="c-grid"/>
     <text x="${pad.l - 6}" y="${y(t) + 4}" class="c-tick" text-anchor="end">${t}</text>`).join('');
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
+  let started = false;
+  const smoothPath = !hasSmooth ? '' : smooth.map((v, i) => {
+    if (v == null) return '';
+    const cmd = started ? 'L' : 'M';
+    started = true;
+    return `${cmd}${x(i).toFixed(1)} ${y(v).toFixed(1)}`;
+  }).join(' ');
   const last = points.length - 1;
   const ref = refValue == null ? '' : `
     <line x1="${pad.l}" x2="${W - pad.r}" y1="${y(refValue)}" y2="${y(refValue)}" class="c-ref"/>
@@ -42,7 +53,8 @@ export function lineChart(container, points, { refValue = null, refLabel = '' } 
     <div class="chart">
       <svg viewBox="0 0 ${W} ${H}" class="c-svg" role="img" aria-label="Line chart">
         ${grid}${ref}
-        <path d="${path}" class="c-line"/>
+        <path d="${path}" class="c-line${hasSmooth ? ' faint' : ''}"/>
+        ${hasSmooth ? `<path d="${smoothPath}" class="c-avg"/>` : ''}
         <circle cx="${x(last)}" cy="${y(points[last].value)}" r="4.5" class="c-dot"/>
         <text x="${x(last)}" y="${y(points[last].value) - 9}" class="c-val" text-anchor="middle">${points[last].value}</text>
         <line class="c-cross" y1="${pad.t}" y2="${H - pad.b}" visibility="hidden"/>
@@ -73,7 +85,8 @@ export function lineChart(container, points, { refValue = null, refLabel = '' } 
     dot.setAttribute('cy', cy);
     dot.setAttribute('visibility', 'visible');
     tip.querySelector('strong').textContent = points[best].value;
-    tip.querySelector('span').textContent = points[best].label;
+    const s = hasSmooth ? smooth[best] : null;
+    tip.querySelector('span').textContent = points[best].label + (s == null ? '' : ` · ${smoothLabel} ${Math.round(s)}`);
     tip.hidden = false;
     const left = (cx / W) * 100;
     tip.style.left = `${Math.min(80, Math.max(20, left))}%`;

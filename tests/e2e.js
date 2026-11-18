@@ -2,7 +2,7 @@
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
 // welcome, form, summary300, pins, spareaim, game, summary, lanes, session, movegame, home, stats, statsfirst, statsspares, practicemiss, help,
 // lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, monthly, lifetime, practice, goals, goalreached, minsettings, minhome,
-// minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame.
+// minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame, sparescost, rolling, chains, leaguesettings, leaguesummary.
 // Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "lifetime" step (a later restore resets it).
 // Add &size=360x780 for a smaller phone (the default is 412x915).
 
@@ -21,6 +21,9 @@ let D;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const $ = (s) => D.querySelector(s);
 const text = (s) => ($(s)?.textContent ?? '').trim();
+const words = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+// The right edges of the values in a stat list, to check they line up in one column.
+const valueEdges = (sel) => [...D.querySelectorAll(`${sel} .kv-val`)].map((v) => Math.round(v.getBoundingClientRect().right));
 
 class Stop extends Error {}
 
@@ -459,6 +462,7 @@ async function run() {
   await nav('#/stats');
   const tabOn = (key) => $(`[data-subtab="${key}"]`)?.getAttribute('aria-selected') === 'true';
   check('stats opens on Overview', tabOn('overview'));
+  check('with only 2 games, Overview says nothing yet about missed spares', !$('#sparesCost'));
   check('stats average 263', text('.tiles .tile:first-child .tv') === '263', text('.tiles .tile:first-child .tv'));
   check('trend chart rendered', !!$('#trend svg .c-line'));
   check('Overview leaves the line tables to their tab', !$('#lines') && !$('#leaves'));
@@ -487,6 +491,7 @@ async function run() {
   await click('[data-subtab="feel"]');
   check('feel table lists Rushed', text('#feel').includes('Rushed'), text('#feel'));
   check('oil filter offered', D.querySelectorAll('#fOil option').length === 2, text('#fOil'));
+  check('filters with only one choice are hidden', $('#fCenter').hidden && $('#fBall').hidden && $('#fOil').hidden && !$('#fDays').hidden && !$('#clearFilters'));
   $('#fDays').value = '30';
   $('#fDays').dispatchEvent(new W.Event('change'));
   await sleep(50);
@@ -497,7 +502,12 @@ async function run() {
   $('#fDays').dispatchEvent(new W.Event('change'));
   await sleep(50);
   check('progress waits for 4 games', text('#progress').includes('at least 4 games'), text('#progress'));
-  check('personal bests: 300 and 12 strikes in a row', text('#bests').includes('300') && /Strikes in a row\s*12/.test(text('#bests')), text('#bests'));
+  {
+    const streakRow = [...D.querySelectorAll('#bests .kv-row')].find((r) => r.querySelector('.kv-label').firstChild.textContent.trim() === 'Strikes in a row');
+    check('personal bests: 300 and 12 strikes in a row, with its name in the line under it', text('#bests').includes('300')
+      && streakRow?.querySelector('.kv-val').textContent === '12' && streakRow.querySelector('.kv-sub').textContent === 'a perfect game!', words($('#bests')));
+    check('each personal best opens its game', D.querySelectorAll('#bests a.kv-row[href^="#/summary/"]').length >= 4 && !!$('#bests a.kv-row[href^="#/session/"]'), words($('#bests')));
+  }
   await click('[data-by="session"]');
   check('per-session trend needs 2 sessions', text('.trend-by + .hint').includes('2 sessions'), text('.trend-by + .hint'));
   await click('[data-by="game"]');
@@ -761,11 +771,28 @@ async function run() {
     check('Monthly opens on the latest month', tabOn('monthly') && text('#monthName') === 'October 2026' && $('#monthNext').disabled, text('#monthName'));
     check('Monthly hides the date range filter', $('#fDays').hidden && W.getComputedStyle($('#fDays')).display === 'none');
     check("the month's tiles are its own games", text('.tiles .tile:first-child .tv') === String(avgOf(oct)) && text('.tiles .tile:nth-child(3) .tv') === '3', text('.tiles'));
+    {
+      const d = avgOf(oct) - avgOf(sep);
+      check('the strike and spare tiles show their change in points, without a %', /^[▲▼=] [\d.]*\s?\S* ?vs Sep$/.test(words($('#monthTiles .tile:nth-child(4) .tc')))
+        && !words($('#monthTiles .tile:nth-child(4) .tc')).includes('%') && !words($('#monthTiles .tile:nth-child(5) .tc')).includes('%'), words($('#monthTiles .tile:nth-child(4) .tc')));
+      check('each tile shows the change from September', words($('#monthTiles .tile:first-child .tc')) === `${d > 0 ? '▲' : '▼'} ${Math.abs(d)} vs Sep`
+        && D.querySelectorAll('#monthTiles .tc').length === 6 && $('#monthTiles .tile:first-child .tc').classList.contains(d > 0 ? 'better' : 'worse')
+        && $('#monthTiles .tile:nth-child(3) .tc').classList.contains('same'), words($('#monthTiles')));
+    }
+    check('the full comparison with September is folded away', !$('#monthTable').open && text('#monthTable summary') === 'Compare all stats with Sep', text('#monthTable summary'));
     check('October is compared with September', [...D.querySelectorAll('#monthCompare th')].map((th) => th.textContent).join() === ',Sep,Oct,Change'
       && text('#monthCompare tbody tr:first-child td:nth-child(2)') === String(avgOf(sep)), text('#monthCompare'));
+    {
+      const edges = valueEdges('#monthBests');
+      const sizes = [...D.querySelectorAll('#monthBests .kv-val')].map((v) => W.getComputedStyle(v).fontSize);
+      check('Best of the month: values line up in one column, in one font size', edges.length === 4 && new Set(edges).size === 1 && new Set(sizes).size === 1, `${edges} | ${sizes}`);
+      const sub = $('#monthBests .kv-sub');
+      check('the line under a name is small and muted', !!sub && parseFloat(W.getComputedStyle(sub).fontSize) < parseFloat(sizes[0])
+        && W.getComputedStyle(sub).fontWeight === '400', sub && W.getComputedStyle(sub).fontWeight);
+    }
     check('the month by month table has both months, newest first, with a chart', D.querySelectorAll('#months tbody tr').length === 2
       && text('#months tbody tr:first-child td') === 'Oct' && !!$('#monthTrend svg .c-line'), text('#months'));
-    check("the month's high game links to it", !!$('#monthBests a[href^="#/summary/w5/"]'));
+    check("the month's high game row opens that game", !!$('#monthBests a.kv-row[href^="#/summary/w5/"]') && !$('#monthBests .kv-val a'));
     stopAt('monthly');
     await click('#monthPrev');
     check('‹ goes to September, the first month', text('#monthName') === 'September 2026' && $('#monthPrev').disabled
@@ -776,7 +803,14 @@ async function run() {
 
     await click('[data-subtab="lifetime"]');
     check('Lifetime counts every game and pin', tabOn('lifetime') && text('.tiles .tile:first-child .tv') === '18' && text('.tiles .tile:nth-child(2) .tv') === pins.toLocaleString(), text('.tiles'));
-    check('Lifetime says since when', text('#lifetimeSince') === `Since ${new Date(2026, 8, 1).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · 6 sessions · 6 days bowled`, text('#lifetimeSince'));
+    {
+      const first = $('#lifetime .kv-row');
+      check('Lifetime says since when, with sessions and days under it', words(first.querySelector('.kv-val')) === new Date(2026, 8, 1).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+        && words(first.querySelector('.kv-sub')) === '6 sessions · 6 days bowled', words(first));
+      check('Lifetime leaves the average and high game to Personal bests', !/Average|High game|High series|Spares made/.test(text('#lifetime')), words($('#lifetime')));
+      const edges = valueEdges('#lifetime');
+      check('Your bowling so far: values line up in one column', edges.length === 6 && new Set(edges).size === 1, String(edges));
+    }
     check('the score spread adds up to every game', [...D.querySelectorAll('#spread .bar-val')].reduce((a, el) => a + Number(el.textContent.split(' ')[0]), 0) === 18, text('#spread'));
     {
       const reached = [...D.querySelectorAll('#reached li')].find((li) => li.textContent.includes('10 games bowled'));
@@ -786,7 +820,7 @@ async function run() {
         && text('#reachedEarlier summary') === `Earlier (${D.querySelectorAll('#reachedEarlier li').length})` && !$('#reachedEarlier').open
         && D.querySelectorAll('#reachedEarlier li').length > 0, text('#reachedEarlier summary'));
       check('next up lists the 3 closest, a 200 game first at a best of 193', D.querySelectorAll('#nextUp li').length === 3
-        && text('#nextUp li:first-child') === 'First 200 gameyour best is 193', text('#nextUp'));
+        && words($('#nextUp li:first-child')) === 'First 200 game your best is 193', words($('#nextUp')));
       check('the rest shows how far to 25 games', [...D.querySelectorAll('#milestones details li')].some((li) => li.textContent.includes('25 games bowled') && li.textContent.includes('18/25')), text('#milestones details'));
     }
     stopAt('lifetime');
@@ -795,9 +829,24 @@ async function run() {
     $('#fCenter').dispatchEvent(new W.Event('change'));
     await sleep(50);
     check('a filter keeps the Lifetime tab', tabOn('lifetime') && text('.tiles .tile:first-child .tv') === '18');
-    $('#fCenter').value = '';
-    $('#fCenter').dispatchEvent(new W.Event('change'));
-    await sleep(50);
+    check('a filter in use stays visible, with Clear filters', !$('#fCenter').hidden && !!$('#clearFilters'));
+    await click('#clearFilters');
+    check('Clear filters resets them', $('#fCenter').value === '' && $('#fCenter').hidden && !$('#clearFilters') && tabOn('lifetime'));
+    // With 14 months of games, the table shows the latest 12 and folds the rest away.
+    {
+      const saved = localStorage.getItem('bowltrack.v1');
+      const many = JSON.parse(saved);
+      const base = many.sessions[0];
+      many.sessions = Array.from({ length: 14 }, (_, i) => ({ ...base, id: `m${i}`, date: `${2025 + Math.floor((i + 8) / 12)}-${String(((i + 8) % 12) + 1).padStart(2, '0')}-10` }));
+      storage.restoreBackup(JSON.stringify(many));
+      await sleep(150);
+      await nav('#/stats');
+      await click('[data-subtab="monthly"]');
+      check('the month table shows 12 months and folds the older 2 away', D.querySelectorAll('#months > .tbl-wrap tbody tr').length === 12
+        && text('#olderMonths summary') === 'Older months (2)' && D.querySelectorAll('#olderMonths tbody tr').length === 2, text('#olderMonths summary'));
+      storage.restoreBackup(saved);
+      await sleep(150);
+    }
     // The game that reached a milestone says so, and the pill opens Lifetime.
     await nav('#/summary/w0/w0g0');
     check("the first game's summary shows its milestones", text('#milestonePill').startsWith('Milestone'), text('#milestonePill'));
@@ -809,6 +858,142 @@ async function run() {
         && top > 60 && top < W.innerHeight / 2, `${W.location.hash} top ${top}`);
     }
     await click('[data-subtab="overview"]');
+  }
+
+  // ---- Spare breakdown, what missed spares cost, the rolling average, strike chains ----
+  {
+    await nav('#/stats');
+    await click('[data-subtab="overview"]');
+    check('Overview says what missed spares cost, in one line', /^Missed spares cost you about \d+ pins a game →$/.test(text('#sparesCost')), text('#sparesCost'));
+    await click('#sparesCost');
+    check('that line opens the Spares tab', tabOn('spares') && !!$('#spareCost'));
+    check('Spares shows four rates in two rows, each with its count', D.querySelectorAll('#spareTiles .tile').length === 4
+      && D.querySelectorAll('#spareTiles .tc').length === 4 && W.getComputedStyle($('#spareTiles')).gridTemplateColumns.split(' ').length === 2
+      && ['Spares made', '1-pin spares', 'Multi-pin spares', 'Splits made'].every((t) => text('#spareTiles').includes(t)), words($('#spareTiles')));
+    {
+      const st = db().sessions.flatMap((x) => x.games);
+      const rows = [...D.querySelectorAll('#spareCost .kv-val')].map((v) => Number(v.textContent));
+      check('the cost card gives all spares and single pins, singles the smaller', rows.length === 2 && rows[0] >= rows[1] && rows[1] >= 0 && st.length === 18, String(rows));
+    }
+    stopAt('sparescost');
+    await click('[data-subtab="overview"]');
+    await click('[data-by="game"]');
+    check('per game, the chart adds a 5-game rolling average with a legend', !!$('#trend .c-avg') && $('#trend .c-line').classList.contains('faint')
+      && text('#trendLegend') .includes('5-game average'), text('#trendLegend'));
+    check('the chart card says how much scores swing, in one short line', /^Most games land within ±\d+ pins of your average \(\d+ of 18\)\.$/.test(text('#swing')), text('#swing'));
+    stopAt('rolling');
+    await click('[data-by="session"]');
+    check('per session there is no rolling line', !$('#trend .c-avg') && !$('#trendLegend'));
+    await click('[data-subtab="first"]');
+    check('First ball shows strike chains and the 10th frame', D.querySelectorAll('#chains .kv-row').length === 3
+      && /^\d+%$/.test(text('#chains .kv-row:first-child .kv-val')) && /\d+ of \d+/.test(text('#chains .kv-side')), words($('#chains')));
+    stopAt('chains');
+    await click('[data-subtab="overview"]');
+  }
+
+  // ---- League & handicap ----
+  {
+    // Off: nothing about leagues anywhere.
+    await nav('#/new');
+    check('with league off, the session form has no League night switch', !$('#leagueNight'));
+    await nav('#/settings');
+    check('Settings offers league tools, off at first', !!$('#leagueOn') && !$('#leagueOn').checked && !$('#leaguePct'));
+    $('#leagueOn').checked = true;
+    $('#leagueOn').dispatchEvent(new W.Event('change', { bubbles: true }));
+    await sleep(60);
+    check('switching it on shows the handicap rule, season and book average', db().settings.league.on && !!$('#leaguePct') && $('#leaguePct').value === '90'
+      && $('#leagueBase').value === '220' && text('#leagueNow') === 'Your handicap starts after 3 league games (0 so far).', text('#leagueNow'));
+    $('#leagueAvg').value = '170';
+    $('#leagueAvg').dispatchEvent(new W.Event('input', { bubbles: true }));
+    check('a typed book average works out the handicap straight away', db().settings.league.average === 170
+      && text('#leagueNow') === 'Your book average: 170 (from your league sheet) · handicap 45 a game', text('#leagueNow'));
+    $('#leagueAvg').value = '';
+    $('#leagueAvg').dispatchEvent(new W.Event('input', { bubbles: true }));
+    check('clearing it goes back to working it out', db().settings.league.average === null);
+    $('#leagueBase').value = '99';
+    $('#leagueBase').dispatchEvent(new W.Event('input', { bubbles: true }));
+    $('#leagueBase').dispatchEvent(new W.Event('change', { bubbles: true }));
+    check('a base out of range is not saved, and the box shows the saved one again', db().settings.league.base === 220 && $('#leagueBase').value === '220', $('#leagueBase').value);
+    stopAt('leaguesettings');
+    await nav('#/new');
+    check('with league on, the session form starts with a League night switch', !!$('#leagueNight') && !$('#leagueNight').checked);
+
+    // Sessions 2-4 (Sep 8, 15, 22) are league nights: the 4th one's handicap comes from the 9 games before it.
+    const saved = localStorage.getItem('bowltrack.v1');
+    const data = JSON.parse(saved);
+    data.sessions.forEach((x, i) => { x.league = i >= 1 && i <= 4; });
+    storage.restoreBackup(JSON.stringify(data));
+    await sleep(150);
+    const sess = db().sessions;
+    const before = sess.slice(1, 4).flatMap((x) => x.games).map((g) => g.score);
+    const average = Math.floor(before.reduce((a, b) => a + b, 0) / before.length);
+    const h = Math.floor(Math.max(0, 220 - average) * 0.9);
+    const night = sess[4];
+    await nav(`#/session/${night.id}`);
+    const series = night.games.slice(0, 3).reduce((a, g) => a + g.score, 0);
+    check('a league night shows its handicap and series with handicap', text('#leagueLine') === `League Handicap ${h} a game · series ${series + 3 * h} with handicap`, text('#leagueLine'));
+    await nav(`#/summary/${night.id}/${night.games[0].id}`);
+    check('its games show the score with handicap', text('#withHandicap') === `With handicap: ${night.games[0].score + h} (${night.games[0].score} + ${h})`, text('#withHandicap'));
+    stopAt('leaguesummary');
+    await nav(`#/session/${sess[1].id}`);
+    check('the first league night has no handicap yet', text('#leagueLine') === 'League Handicap starts after 3 league games (0 so far).', text('#leagueLine'));
+    await nav(`#/session/${sess[0].id}`);
+    check('a night that isn\'t league shows nothing about it', !$('#leagueLine'));
+    await nav('#/');
+    check('Home marks league nights', D.querySelectorAll('.sessions .tag-league').length === 4);
+    {
+      // The spreadsheet export marks league nights in a last column.
+      let blob = null;
+      const make = URL.createObjectURL;
+      const tap = HTMLAnchorElement.prototype.click;
+      URL.createObjectURL = (b) => { blob = b; return 'blob:test'; };
+      HTMLAnchorElement.prototype.click = () => {};
+      try { await storage.exportCSV(); } finally {
+        URL.createObjectURL = make;
+        HTMLAnchorElement.prototype.click = tap;
+      }
+      const lines = blob ? (await blob.text()).replace(/^\uFEFF/, '').split('\r\n') : [];
+      check('the CSV ends with a league column, filled in for league nights', lines[0]?.endsWith(',session_notes,league')
+        && lines.some((l) => l.endsWith(',yes')) && lines.every((l) => l.split(',').length >= 20), lines[0]);
+    }
+    await nav('#/stats');
+    check('Stats offers League nights / Other bowling', !$('#fKind').hidden && D.querySelectorAll('#fKind option').length === 3);
+    $('#fKind').value = 'league';
+    $('#fKind').dispatchEvent(new W.Event('change'));
+    await sleep(50);
+    check('League nights counts only those games', text('.tiles .tile:nth-child(3) .tv') === '12' && !!$('#clearFilters'), text('.tiles'));
+    await click('#clearFilters');
+    {
+      // Fixing an older session leaves what "Bowl at" repeats alone; saving the latest one sets it.
+      const lastBefore = JSON.stringify(db().settings.last);
+      await nav(`#/session/${sess[2].id}/edit`);
+      $('#ball').value = 'Old ball';
+      $('#sessionForm').requestSubmit();
+      await sleep(80);
+      check('editing an older session does not change "Bowl at"', JSON.stringify(db().settings.last) === lastBefore && db().sessions[2].ball === 'Old ball', JSON.stringify(db().settings.last));
+      await nav(`#/session/${sess[5].id}/edit`);
+      $('#leagueNight').checked = true;
+      $('#sessionForm').requestSubmit();
+      await sleep(80);
+      check('editing the latest session sets it', db().settings.last.league === true && db().settings.last.center === 'Test Lanes', JSON.stringify(db().settings.last));
+    }
+    // Switching league tools off hides the filter too, even with league nights saved.
+    await nav('#/settings');
+    $('#leagueOn').checked = false;
+    $('#leagueOn').dispatchEvent(new W.Event('change', { bubbles: true }));
+    await sleep(60);
+    await nav('#/stats');
+    check('with league tools off, Stats has no League filter', $('#fKind').hidden && !$('.sessions .tag-league'));
+    // Back to the made-up sessions as they were, league off.
+    storage.restoreBackup(saved);
+    await sleep(150);
+    {
+      const plain = db();
+      plain.settings.league.on = false;
+      localStorage.setItem('bowltrack.v1', JSON.stringify(plain));
+      W.dispatchEvent(new StorageEvent('storage', { key: 'bowltrack.v1', newValue: JSON.stringify(plain) }));
+      await sleep(100);
+    }
   }
 
   // ---- Coach: before you bowl ----

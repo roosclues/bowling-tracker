@@ -39,7 +39,7 @@ function sessionRow(s) {
         <span class="date-badge"><b>${d.day}</b><i>${esc(d.month)}</i></span>
         <span class="li-main">
           <span class="li-title">${esc(s.center || 'Bowling')}</span>
-          <span class="li-sub">${esc(d.weekday)}${s.ball ? ' · ' + esc(s.ball) : ''}</span>
+          <span class="li-sub">${esc(d.weekday)}${s.league && db.settings.league.on ? ' · <span class="tag-league">League</span>' : ''}${s.ball ? ' · ' + esc(s.ball) : ''}</span>
         </span>
         <span class="li-scores">${s.games.map((g) => `<span class="sc${g.done ? '' : ' live'}">${g.score}</span>`).join('')}</span>
       </a>
@@ -90,7 +90,7 @@ export function render(root) {
     ${cur ? `<a class="btn primary block big" href="#/game/${cur.session.id}/${cur.game.id}">${icon('ball')} Continue game · ${cur.game.score}</a>` : ''}
     ${again ? `
       <button type="button" class="btn primary block big" data-act="again" id="bowlAgain">${icon('ball')} Bowl at ${esc(last.center)}</button>
-      <p class="hero-foot" id="bowlAgainInfo">${[last.ball && esc(last.ball), logLabel(db.settings.log)].filter(Boolean).join(' · ')}</p>
+      <p class="hero-foot" id="bowlAgainInfo">${[db.settings.league.on && last.league && 'League night', last.ball && esc(last.ball), logLabel(db.settings.log)].filter(Boolean).join(' · ')}</p>
       ${warn ? `<a class="hero-foot lane-warn${avoid ? ' warn' : ''}" id="laneWarn" href="#/lanes" data-act="lanes">${warn}</a>` : ''}` : ''}
     <a class="btn ${cur || again ? 'on-dark' : 'primary'} block big" href="#/new">${icon('plus')} ${again ? 'New session…' : 'New session'}</a>
     <div class="actions-row">
@@ -172,7 +172,7 @@ export function render(root) {
       e.preventDefault();
       showLanes({ center: last.center });
     } else if (act === 'again' && once()) {
-      startSession({ date: todayISO(), center: last.center, lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '' });
+      startSession({ date: todayISO(), center: last.center, lane: '', ball: last.ball ?? '', oil: last.oil || 'Unknown', notes: '', league: !!last.league });
     }
   };
 }

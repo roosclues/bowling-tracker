@@ -4,6 +4,21 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261119-0612',
+    title: 'League handicap, more spare stats, and calmer Stats',
+    items: [
+      'League nights: switch on Settings → League, then mark league nights when you start a session. The app keeps your book average (rounded down, like league sheets) and shows each game and series with your handicap, worked out the way your league does (like 90% of 220). You can type the average from your league sheet instead.',
+      'Spares: your spare rate split into single pins, multi-pin spares and splits, and what missed spares cost you in pins a game. Overview mentions it when it\'s worth fixing.',
+      'Score chart: a 5-game average line through your games, and how much your scores usually swing.',
+      'First ball: how often a strike follows a strike (doubles), and how often you mark in the 10th frame.',
+      'Lists of numbers (Personal bests, Best of the month, Your bowling so far, Milestones) now look the same everywhere: the numbers line up in one column, with details in a small line under each name.',
+      'Tap a best game or milestone to open that game.',
+      'Monthly: each tile shows the change from the month before (like ▲ 24 vs Sep). The full comparison is one tap away.',
+      'Lifetime only lists what isn\'t shown elsewhere. Your average and high game stay in Overview → Personal bests.',
+      'Filters only show when there\'s something to choose between, and "Clear filters" resets them.',
+    ],
+  },
+  {
     version: 'v20261119-0257',
     title: 'Monthly and lifetime stats, milestones, and moving games',
     items: [

@@ -3,7 +3,7 @@
 // recomputed here instead of reaching the UI. Scores and "done" are always recomputed.
 
 import { frameDone, pinsBefore, scoreGame, gameDone, ALL_PINS } from './scoring.js';
-import { GOAL_TYPES } from './stats.js';
+import { GOAL_TYPES, LEAGUE_DEFAULTS } from './stats.js';
 import { HITS, LOG_LEVELS, LANE_TAGS } from './terms.js';
 import { laneKey } from './lanenotes.js';
 import { uid, todayISO } from './util.js';
@@ -76,6 +76,7 @@ function normSession(raw, seen) {
     ball: text(raw.ball, 80),
     oil: text(raw.oil, 40) || 'Unknown',
     notes: text(raw.notes, 1000),
+    league: raw.league === true,
     games: raw.games.map((g) => normGame(g, gameIds)),
   };
 }
@@ -139,6 +140,19 @@ function normGoals(raw, gameIds) {
   return out;
 }
 
+// League settings: whether they're on, the handicap rule (pct % of base), when the season
+// started, and a book average typed in from the league sheet (null: the app works it out).
+function normLeague(raw) {
+  const r = isObj(raw) ? raw : {};
+  return {
+    on: r.on === true,
+    base: int(r.base, 150, 300) ?? LEAGUE_DEFAULTS.base,
+    pct: int(r.pct, 10, 100) ?? LEAGUE_DEFAULTS.pct,
+    seasonStart: date(r.seasonStart),
+    average: int(r.average, 0, 300),
+  };
+}
+
 // Throws if `data` isn't a Bowling Tracker database at all; otherwise returns a clean copy.
 export function normalizeDB(data) {
   if (!isObj(data) || !Array.isArray(data.sessions)) throw new Error('This file is not a Bowling Tracker backup.');
@@ -151,7 +165,7 @@ export function normalizeDB(data) {
     version: 1,
     settings: {
       hand: s.hand === 'L' ? 'L' : 'R',
-      last: { center: text(last.center, 80), ball: text(last.ball, 80), oil: text(last.oil, 40) },
+      last: { center: text(last.center, 80), ball: text(last.ball, 80), oil: text(last.oil, 40), league: last.league === true },
       sessionsSinceBackup: int(s.sessionsSinceBackup, 0, 1e6) ?? 0,
       lastBackup: date(s.lastBackup),
       keepAwake: s.keepAwake !== false,
@@ -162,6 +176,7 @@ export function normalizeDB(data) {
       log: LOG_LEVELS.some((l) => l.key === s.log) ? s.log : s.quick === true ? 'pins' : 'line',
       speedUnit: s.speedUnit === 'mph' ? 'mph' : 'kph',
       goals: normGoals(s.goals, gameIds),
+      league: normLeague(s.league),
     },
     sessions,
     practice: (Array.isArray(data.practice) ? data.practice : []).slice(-20000).map((x) => normAttempt(x, seen)).filter(Boolean),

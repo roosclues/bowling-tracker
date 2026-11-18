@@ -5,7 +5,7 @@
 import { db, save, findSession, findGame, newGame, unstampGoals } from '../storage.js';
 import { marks, isFreshRack, isSplit, ALL_PINS } from '../scoring.js';
 import { scoreboardHTML } from '../scoreboard.js';
-import { computeStats, finishedGames, tips, goalText, seriesOf, scoreWithSpares, spareAimFor } from '../stats.js';
+import { computeStats, finishedGames, tips, goalText, seriesOf, scoreWithSpares, spareAimFor, leagueStanding } from '../stats.js';
 import { hitLabel } from '../terms.js';
 import { miniPins } from '../pins.js';
 import { esc, fmtPct, go, avg, plural, fmtSpeed } from '../util.js';
@@ -82,6 +82,8 @@ export function render(root, sid, gid) {
   // The 3-game series, once this session's first three games are done (and this is one of them).
   const series = session.games.filter((g) => g.done).indexOf(game) < 3 ? seriesOf(session) : null;
   const missing = ballsWithoutLine(game).length;
+  // On a league night: the score with the handicap from the league average going into it.
+  const handicap = session.league && db.settings.league.on ? leagueStanding(db.sessions, db.settings.league, session).handicap : null;
 
   root.innerHTML = `
     ${topbar({ back: `#/session/${sid}`, title: `Game ${gameNo} summary`, sub: esc(session.center || '') })}
@@ -92,6 +94,7 @@ export function render(root, sid, gid) {
         ${reached.map((g) => `<div class="pill new-high goal-reached">Goal reached: ${goalText(g)}</div>`).join('')}
         ${milestonePill(unlocked)}
         <div class="final-score">${game.score}</div>
+        ${handicap != null ? `<div class="hero-trend" id="withHandicap">With handicap: <b>${game.score + handicap}</b> (${game.score} + ${handicap})</div>` : ''}
         ${diff !== null ? `
           <div class="hero-trend" id="vsAverage">
             <b class="${diff > 0 ? 'up' : diff < 0 ? 'down' : ''}">${diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '±0'}</b>

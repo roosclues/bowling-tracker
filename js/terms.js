@@ -72,6 +72,26 @@ export const GLOSSARY = {
     title: 'Turkey',
     text: 'Three strikes in a row. Two in a row is a double; four is a 4-bagger. Here each run of 3 or more strikes counts as one turkey, so 5 in a row is still one.',
   },
+  double: {
+    title: 'Double',
+    text: 'Two strikes in a row. Strikes in a row are worth the most: each strike adds the next two balls as a bonus, so a run of strikes is what turns a 170 game into a 220.',
+  },
+  mark: {
+    title: 'Mark',
+    text: 'A frame with a strike or a spare. In the 10th frame a mark also earns extra balls, so it often decides the last 10 to 30 pins of a game.',
+  },
+  multiPin: {
+    title: 'Multi-pin spare',
+    text: 'A spare with 2 or more pins left that is not a split, like the 3-6 or 2-4-5. Usually easier than they look: aim for the pin nearest to you and let it carry the others.',
+  },
+  handicap: {
+    title: 'Handicap',
+    text: 'Extra pins a league adds to each game so bowlers of different levels can compete. Most leagues use a percentage of the difference between a base score and your average, like 90% of 220: with a 170 average that is 45 pins a game. Your league sheet tells you the numbers your league uses.',
+  },
+  bookAverage: {
+    title: 'Book average',
+    text: 'The league average on your league sheet. Leagues round it down: 168.9 counts as 168. Your handicap is worked out from the average you had before the night, so the games you bowl tonight count from next week.',
+  },
   clean: {
     title: 'Clean game',
     text: 'A game with a strike or a spare in every frame: no open frames at all. Clean games are how steady bowlers score well even without many strikes.',

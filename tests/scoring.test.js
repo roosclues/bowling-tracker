@@ -3,6 +3,7 @@ import { normalizeDB } from '../js/normalize.js';
 import {
   computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
   scoreWithSpares, sessionMoves, spareAimFor, monthlyStats, lifetimeTotals, scoreSpread, finishedGames,
+  sparePinsLost, scoreSwing, rollingAverage, strikeChains, leagueStanding, LEAGUE_DEFAULTS,
 } from '../js/stats.js';
 import { milestones, milestonesForGame, nextMilestones, milestoneProgress } from '../js/milestones.js';
 import { carryNote } from '../js/terms.js';
@@ -551,6 +552,92 @@ test('finished games come oldest first, in session order, without games in progr
 test('monthly stats group by calendar month, oldest first', () => {
   const months = monthlyStats([...lifeSessions, { id: 's3', date: '2026-10-20', games: [{ id: 'x', frames: game([]), done: false, score: 0 }] }]);
   eq(months.map((m) => [m.key, m.st.games.length, m.days]), [['2026-09', 1, 1], ['2026-10', 3, 1]]);
+});
+
+// ---------- Spare breakdown, what missed spares cost, swing, strike chains, league ----------
+
+// One finished game from frames of standing pins, e.g. [{ standing: [5] }, { standing: [] }].
+function framesGame(id, frames) {
+  return { id, frames, done: true, score: scoreGame(frames).total };
+}
+const X = [{ standing: [] }];
+const spareMix = framesGame('mix', [
+  [{ standing: [5] }, { standing: [] }],        // a single pin, made
+  [{ standing: [7, 10] }, { standing: [7] }],   // a split, missed
+  [{ standing: [2, 4] }, { standing: [] }],     // two pins, made
+  [{ standing: [3, 6] }, { standing: [6] }],    // two pins, missed
+  X, X, X, X, X,
+  [{ standing: [] }, { standing: [] }, { standing: [] }],
+]);
+const mixSessions = [{ id: 'm', date: '2026-09-01', games: [spareMix] }];
+
+test('spares split into single-pin, multi-pin and splits', () => {
+  const st = computeStats(mixSessions);
+  eq([st.spareChances, st.sparesMade], [4, 2]);
+  eq([st.singleChances, st.singleMade, st.multiChances, st.multiMade, st.splitChances, st.splitMade], [1, 1, 2, 1, 1, 0]);
+});
+
+test('what missed spares cost, all of them and single pins only', () => {
+  // Only the split and the 3-6 were missed, so making single pins changes nothing.
+  eq(scoreWithSpares(spareMix.frames, { singlesOnly: true }), spareMix.score);
+  const lost = sparePinsLost(computeStats(mixSessions));
+  eq([lost.all, lost.singles], [scoreWithSpares(spareMix.frames) - spareMix.score, 0]);
+  eq(lost.all > 0, true);
+  eq(sparePinsLost(computeStats([])), null);
+});
+
+test('score swing is the standard deviation, from 5 games', () => {
+  const of = (scores) => ({ games: scores.map((score) => ({ game: { score } })) });
+  eq(scoreSwing(of([100, 120, 140, 160])), null);
+  // Mean 140; the deviation is the square root of 800, about 28; 120, 140 and 160 are within it.
+  eq(scoreSwing(of([100, 120, 140, 160, 180])), { sd: 28, within: 3, games: 5 });
+  eq(rollingAverage([1, 2, 3, 4, 5, 6], 5), [null, null, null, null, 3, 4]);
+});
+
+test('strike chains: strikes after strikes, after anything else, and the 10th frame', () => {
+  const c = strikeChains(computeStats(lifeSessions));
+  // The 300 has 11 strikes after a strike. The 141 (X X X then 9s) has 2 of 3 after a strike
+  // and 0 of 6 after a 9. The 190 (all 9 spares) has 0 of 10, the gutter game 0 of 9.
+  eq([c.afterStrike.n, c.afterStrike.strikes], [14, 13]);
+  eq([c.afterOther.n, c.afterOther.strikes], [6 + 10 + 9, 0]);
+  // 10th frames: the 300 and the 190 have a mark; the 141 and the gutter game don't.
+  eq([c.tenth.n, c.tenth.marks], [4, 2]);
+});
+
+test('league average and handicap going into a night', () => {
+  const g = (id, score) => ({ id, frames: [], done: true, score });
+  const league = { ...LEAGUE_DEFAULTS, on: true }; // 90% of 220
+  const s1 = { id: 's1', date: '2026-09-01', league: true, games: [g('a', 150), g('b', 160)] };
+  const s2 = { id: 's2', date: '2026-09-08', league: true, games: [g('c', 171)] };
+  const s3 = { id: 's3', date: '2026-09-15', league: false, games: [g('d', 250)] };
+  const s4 = { id: 's4', date: '2026-09-22', league: true, games: [g('e', 200)] };
+  const all = [s1, s2, s3, s4];
+  // Before s4: 150, 160 and 171 (not the 250 from a non-league night), 160.33 rounded down.
+  eq(leagueStanding(all, league, s4), { average: 160, typed: false, games: 3, handicap: 54 });
+  // Before s2 there are only 2 league games: no handicap yet.
+  eq(leagueStanding(all, league, s2), { average: null, typed: false, games: 2, handicap: null });
+  // Now (after s4): 150, 160, 171, 200 → 170.25 → 170; (220 - 170) × 90% = 45.
+  eq(leagueStanding(all, league).handicap, 45);
+  // A season start leaves out the games before it.
+  eq(leagueStanding(all, { ...league, seasonStart: '2026-09-05' }, s4).games, 1);
+  // A typed book average wins, and a handicap is never negative.
+  eq(leagueStanding(all, { ...league, average: 230 }, s2), { average: 230, typed: true, games: 2, handicap: 0 });
+  eq(leagueStanding(all, { ...league, pct: 100, base: 200 }, s4).handicap, 40);
+  // A typed average stands in only until 9 league games are logged; then your own games count.
+  const nine = [{ id: 'n', date: '2026-09-01', league: true, games: Array.from({ length: 9 }, (_, i) => g(`n${i}`, 150)) }];
+  eq(leagueStanding(nine, { ...league, average: 230 }), { average: 150, typed: false, games: 9, handicap: 63 });
+  eq(leagueStanding([{ ...nine[0], games: nine[0].games.slice(0, 8) }], { ...league, average: 230 }).typed, true);
+});
+
+test('league settings and league nights load with safe defaults', () => {
+  const old = normalizeDB({ sessions: [{ id: 'a', date: '2026-01-01', games: [] }] });
+  eq([old.sessions[0].league, old.settings.league, old.settings.last.league], [false, LEAGUE_DEFAULTS, false]);
+  const odd = normalizeDB({
+    sessions: [{ id: 'a', date: '2026-01-01', league: 'yes', games: [] }],
+    settings: { league: { on: true, base: 999, pct: 90, seasonStart: 'soon', average: 168 }, last: { league: true } },
+  });
+  eq([odd.sessions[0].league, odd.settings.league, odd.settings.last.league],
+    [false, { on: true, base: 220, pct: 90, seasonStart: null, average: 168 }, true]);
 });
 
 const failed = results.filter((r) => !r.ok);
