@@ -68,6 +68,14 @@ export const GLOSSARY = {
     title: 'Strike',
     text: 'All 10 pins on the first ball. Scored as 10 plus the pins from your next two balls.',
   },
+  turkey: {
+    title: 'Turkey',
+    text: 'Three strikes in a row. Two in a row is a double; four is a 4-bagger. Here each run of 3 or more strikes counts as one turkey, so 5 in a row is still one.',
+  },
+  clean: {
+    title: 'Clean game',
+    text: 'A game with a strike or a spare in every frame: no open frames at all. Clean games are how steady bowlers score well even without many strikes.',
+  },
   carry: {
     title: 'Carry',
     text: 'A pocket hit should be a strike, but sometimes pins stay up anyway. Which pins stay tells you why: a 10 pin (7 for lefties) means the ball was too weak, a 4 pin (6 for lefties) means it hooked too hard, and a single back pin on the far side (the 7, 8 or 9 for righties) is often just bad luck. Needs "Pin hit" recorded (What to log: Everything).',

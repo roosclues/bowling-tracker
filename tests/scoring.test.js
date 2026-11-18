@@ -2,8 +2,9 @@ import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/
 import { normalizeDB } from '../js/normalize.js';
 import {
   computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
-  scoreWithSpares, sessionMoves, spareAimFor,
+  scoreWithSpares, sessionMoves, spareAimFor, monthlyStats, lifetimeTotals, scoreSpread, finishedGames,
 } from '../js/stats.js';
+import { milestones, milestonesForGame, nextMilestones, milestoneProgress } from '../js/milestones.js';
 import { carryNote } from '../js/terms.js';
 import { spareAim, keyPin, adjustAim, aimText } from '../js/spares.js';
 import { findNote, saveNote, notesAt, laneWarning } from '../js/lanenotes.js';
@@ -481,6 +482,75 @@ test('the coach knows when it is: before, during or after', () => {
   eq(brief(empty, '')[0].title, 'Welcome! Let\'s find your line');
   eq(questions(empty, coachContext(empty)).map((q) => q.key), ['speed', 'findline', 'arrows']);
   eq(answer('speed', empty, coachContext(empty))[0].title, 'Log a few speeds first');
+});
+
+// ---------- Months, lifetime and milestones ----------
+
+// A finished game from pin counts, with its score.
+function done(id, rolls) {
+  const frames = game(rolls);
+  return { id, frames, done: true, score: scoreGame(frames).total };
+}
+const turkeyThenNines = done('a', [10, 10, 10, ...Array(7).fill([9, 0]).flat()]); // 141
+const perfect = done('b', Array(12).fill(10)); // 300
+const allSpares = done('c', [...Array(10).fill([9, 1]).flat(), 9]); // 190
+const gutters = done('d', Array(20).fill(0)); // 0
+const lifeSessions = [
+  { id: 's1', date: '2026-09-03', center: 'North', ball: 'Blue', games: [turkeyThenNines] },
+  { id: 's2', date: '2026-10-05', center: 'South', ball: 'Blue', games: [perfect, allSpares, gutters] },
+];
+
+test('milestones: each one is reached by the first game that gets there', () => {
+  eq([turkeyThenNines.score, perfect.score, allSpares.score, gutters.score], [141, 300, 190, 0]);
+  const list = milestones(lifeSessions);
+  const at = (key) => list.find((m) => m.key === key).done?.gid ?? null;
+  eq([at('games1'), at('high100'), at('high150'), at('high300'), at('streak2'), at('streak3'), at('streak6'), at('clean1')],
+    ['a', 'a', 'b', 'b', 'a', 'a', 'b', 'b']);
+  eq(list.find((m) => m.key === 'games1').done.date, '2026-09-03');
+  // A series counts once a session has 3 finished games: 300 + 190 + 0.
+  eq([at('series450'), at('series500')], ['d', null]);
+  eq([at('games10'), at('strikes50'), at('split1')], [null, null, null]);
+  eq(milestoneProgress(list.find((m) => m.key === 'games10')), '4/10');
+  eq(milestoneProgress(list.find((m) => m.key === 'series500')), 'your best is 490');
+});
+
+test('milestones: a game shows the highest of each group; next up is closest first', () => {
+  const list = milestones(lifeSessions);
+  eq(milestonesForGame(list, 'a').map((m) => m.label), ['First game', 'First 100 game', 'First turkey']);
+  eq(milestonesForGame(list, 'b').map((m) => m.label), ['Perfect game (300)', '6 strikes in a row', 'Clean game (no open frames)']);
+  eq(milestonesForGame(list, 'c'), []);
+  eq(nextMilestones(list).map((m) => m.key), ['series500', 'games10', 'strikes50']);
+});
+
+test('milestones: a split picked up counts; moving games changes which game reached it', () => {
+  const split = done('e', [8, 2, ...Array(18).fill(0)]);
+  split.frames[0] = [{ standing: [7, 10] }, { standing: [] }];
+  eq(milestones([{ id: 's', date: '2026-09-01', games: [split] }]).find((m) => m.key === 'split1').done.gid, 'e');
+  // Same games, the October session moved before September: the 300 is now the first game.
+  const moved = [{ ...lifeSessions[1], date: '2026-08-01' }, lifeSessions[0]];
+  eq(milestones(moved).find((m) => m.key === 'games1').done.gid, 'b');
+});
+
+test('lifetime totals and score spread', () => {
+  const t = lifetimeTotals(computeStats(lifeSessions));
+  eq([t.games, t.sessions, t.days, t.pins, t.turkeys, t.cleanGames, t.over200, t.highSeries, t.firstDate],
+    [4, 2, 2, 631, 2, 2, 1, 490, '2026-09-03']);
+  eq(t.centers, [{ name: 'South', games: 3 }, { name: 'North', games: 1 }]);
+  eq(t.balls, [{ name: 'Blue', games: 4 }]);
+  const spread = scoreSpread({ games: [99, 100, 149, 150, 199, 200, 250].map((score) => ({ game: { score } })) });
+  eq(spread.rows.map((r) => r.value), [1, 1, 1, 1, 1, 1, 1]);
+  eq([spread.pct150, spread.pct200], [57, 29]);
+});
+
+test('finished games come oldest first, in session order, without games in progress', () => {
+  const open = { id: 'x', frames: game([]), done: false, score: 0 };
+  const list = finishedGames([{ ...lifeSessions[1], games: [perfect, open, allSpares] }, lifeSessions[0]]);
+  eq(list.map((g) => [g.game.id, g.number]), [['a', 1], ['b', 1], ['c', 3]]);
+});
+
+test('monthly stats group by calendar month, oldest first', () => {
+  const months = monthlyStats([...lifeSessions, { id: 's3', date: '2026-10-20', games: [{ id: 'x', frames: game([]), done: false, score: 0 }] }]);
+  eq(months.map((m) => [m.key, m.st.games.length, m.days]), [['2026-09', 1, 1], ['2026-10', 3, 1]]);
 });
 
 const failed = results.filter((r) => !r.ok);

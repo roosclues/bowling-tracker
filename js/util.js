@@ -32,6 +32,15 @@ export function fmtShortDate(iso) {
   });
 }
 
+// 'November 2026' for a 'YYYY-MM' key; 'Nov' with style 'short' (plus the year when it isn't this year).
+export function fmtMonth(key, style = 'long') {
+  const [y, m] = key.split('-').map(Number);
+  const opts = style === 'short'
+    ? { month: 'short', ...(y === new Date().getFullYear() ? {} : { year: 'numeric' }) }
+    : { month: 'long', year: 'numeric' };
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, opts);
+}
+
 // { day: '28', month: 'Oct', weekday: 'Tue' } for date badges.
 export function dateParts(iso) {
   const [y, m, d] = iso.split('-').map(Number);

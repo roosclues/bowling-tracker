@@ -5,13 +5,22 @@
 import { db, save, findSession, findGame, newGame, unstampGoals } from '../storage.js';
 import { marks, isFreshRack, isSplit, ALL_PINS } from '../scoring.js';
 import { scoreboardHTML } from '../scoreboard.js';
-import { computeStats, tips, goalText, seriesOf, scoreWithSpares, spareAimFor } from '../stats.js';
+import { computeStats, finishedGames, tips, goalText, seriesOf, scoreWithSpares, spareAimFor } from '../stats.js';
 import { hitLabel } from '../terms.js';
 import { miniPins } from '../pins.js';
 import { esc, fmtPct, go, avg, plural, fmtSpeed } from '../util.js';
 import { topbar, icon, tipsHTML } from '../ui.js';
 import { reopenLastBall, ballsWithoutLine } from './game.js';
 import { showLanes, laneNoteRow } from './lanes.js';
+import { showStatsTab } from './stats.js';
+import { milestones, milestonesForGame } from '../milestones.js';
+
+// "Milestone: First 200 game · First turkey"; past 3, the first 2 and "+N more".
+function milestonePill(list) {
+  if (!list.length) return '';
+  const names = list.length > 3 ? [...list.slice(0, 2).map((m) => m.label), `+${list.length - 2} more`] : list.map((m) => m.label);
+  return `<button type="button" class="pill new-high milestone" data-act="milestones" id="milestonePill">${list.length === 1 ? 'Milestone' : 'Milestones'}: ${names.map(esc).join(' · ')}</button>`;
+}
 
 // Earlier games needed before "vs your average" means anything.
 const MIN_FOR_AVERAGE = 3;
@@ -61,10 +70,11 @@ export function render(root, sid, gid) {
   const gameNo = session.games.indexOf(game) + 1;
   const hints = tips(st, db.settings.hand, null, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand));
   // A record when it was bowled: higher than every finished game before it.
-  const allGames = computeStats(db.sessions).games.map((x) => x.game);
+  const allGames = finishedGames(db.sessions).map((x) => x.game);
   const earlier = allGames.slice(0, allGames.indexOf(game));
   const newHigh = earlier.length > 0 && game.score > Math.max(...earlier.map((g) => g.score));
   const reached = db.settings.goals.filter((g) => g.reachedGame === game.id);
+  const unlocked = milestonesForGame(milestones(db.sessions), game.id);
   // Your average coming into this game.
   const before = earlier.length >= MIN_FOR_AVERAGE ? Math.round(avg(earlier.map((g) => g.score))) : null;
   const diff = before === null ? null : game.score - before;
@@ -80,6 +90,7 @@ export function render(root, sid, gid) {
         <div class="hero-label">Final score</div>
         ${newHigh ? '<div class="pill new-high">New high game!</div>' : ''}
         ${reached.map((g) => `<div class="pill new-high goal-reached">Goal reached: ${goalText(g)}</div>`).join('')}
+        ${milestonePill(unlocked)}
         <div class="final-score">${game.score}</div>
         ${diff !== null ? `
           <div class="hero-trend" id="vsAverage">
@@ -121,6 +132,7 @@ export function render(root, sid, gid) {
         <button class="btn" data-act="undo">${icon('undo', 20)} Undo last ball</button>
         <button class="btn danger" data-act="delete">${icon('trash', 20)} Delete game</button>
       </div>
+      <button class="btn block" data-act="move" id="moveGame">${icon('calendar', 20)} Move to another date</button>
     </div>`;
 
   // Editing screens replace the summary in the history and come back to it with replace too,
@@ -134,6 +146,10 @@ export function render(root, sid, gid) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'review') {
       go(`#/review/${sid}/${gid}`, { replace: true });
+    } else if (act === 'milestones') {
+      showStatsTab('lifetime', '#milestones');
+    } else if (act === 'move') {
+      go(`#/move/${sid}/${gid}`, { replace: true });
     } else if (act === 'lanenote') {
       showLanes({ center: session.center, lane: session.lane, sid, back: `#/summary/${sid}/${gid}` });
     } else if (act === 'another') {

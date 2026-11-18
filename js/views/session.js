@@ -1,7 +1,7 @@
 // Session setup form and session detail (games, how the session went, tips, feet moves,
 // your note on the lane). The form shows your lane notes as you type the center and lane.
 
-import { db, save, findSession, newGame, requestPersist, unstampGoals } from '../storage.js';
+import { db, save, findSession, findGame, newGame, requestPersist, unstampGoals, sortSessions, moveGame } from '../storage.js';
 import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN, spareAimFor } from '../stats.js';
 import { infoButton } from '../terms.js';
 import { topbar, icon, tipsHTML, logChips } from '../ui.js';
@@ -27,7 +27,7 @@ export function startSession(fields) {
   db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
   const session = { id: uid(), ...fields, games: [newGame()] };
   db.sessions.push(session);
-  db.sessions.sort((a, b) => a.date.localeCompare(b.date));
+  sortSessions();
   db.settings.sessionsSinceBackup = (db.settings.sessionsSinceBackup || 0) + 1;
   save();
   requestPersist();
@@ -68,6 +68,7 @@ export function renderForm(root, sid) {
         <div class="field">
           <label for="date">Date</label>
           <input id="date" name="date" type="date" value="${esc(s.date)}">
+          ${existing && existing.games.length > 1 ? `<p class="hint" id="dateHint">This moves all ${existing.games.length} games. Only one on the wrong date? Open that game and tap Move to another date.</p>` : ''}
         </div>
         <div class="field">
           <label for="ball">Ball</label>
@@ -121,6 +122,7 @@ export function renderForm(root, sid) {
     if (existing) {
       db.settings.last = { center: fields.center, ball: fields.ball, oil: fields.oil };
       Object.assign(existing, fields);
+      sortSessions(); // a new date can put it before or after other sessions
       save();
       go(`#/session/${existing.id}`);
       return;
@@ -128,6 +130,108 @@ export function renderForm(root, sid) {
     db.settings.log = level;
     startSession(fields);
   });
+}
+
+// Move a finished game to another date: into a session already on that date, or a new one with
+// the same center, lane, ball and oil. Opened from the game summary.
+export function renderMove(root, sid, gid) {
+  const session = findSession(sid);
+  const game = findGame(sid, gid);
+  if (!game?.done) {
+    root.innerHTML = `<div class="page"><p>Game not found.</p><a class="btn" href="#/">Home</a></div>`;
+    return;
+  }
+  const gameNo = session.games.indexOf(game) + 1;
+  const only = session.games.length === 1;
+  const back = `#/summary/${sid}/${gid}`;
+  const where = esc(session.center || 'this center');
+  const today = todayISO();
+  let pick = null; // a session id, or 'new'
+  let changed = false; // the date box has been touched
+
+  root.innerHTML = `
+    ${topbar({ back, title: `Move game ${gameNo}`, sub: fmtDate(session.date) })}
+    <div class="page form">
+      <div class="card">
+        <div class="field">
+          <label for="moveDate">Date it was bowled</label>
+          <input id="moveDate" type="date" max="${today}" value="${esc(session.date)}">
+        </div>
+        <div class="field">
+          <label id="moveToLabel">Put it in</label>
+          <div class="move-to" id="moveTo" role="group" aria-labelledby="moveToLabel"></div>
+          <p class="hint" id="moveHint" aria-live="polite"></p>
+        </div>
+      </div>
+      <button type="button" class="btn primary block big" data-act="move" id="moveBtn">${icon('check')} Move game</button>
+      <p class="hint center">To move the whole session, change its date with Edit on the session screen.</p>
+    </div>`;
+
+  const dateInput = root.querySelector('#moveDate');
+  const box = root.querySelector('#moveTo');
+  const label = root.querySelector('#moveToLabel');
+  const hint = root.querySelector('#moveHint');
+  const btn = root.querySelector('#moveBtn');
+
+  // The choices for the date in the box: sessions already on that day, then a new session.
+  const choices = () => {
+    const date = dateInput.value;
+    if (!date || date > today) return []; // a finished game can't be from a day still to come
+    const list = db.sessions.filter((x) => x.date === date && x !== session).map((x) => ({
+      id: x.id,
+      center: x.center,
+      label: [esc(x.center || 'Bowling session'), x.lane && `lane ${esc(x.lane)}`, plural(x.games.length, 'game')].filter(Boolean).join(' · '),
+    }));
+    if (date !== session.date) list.push({ id: 'new', label: only ? `Its own session at ${where}` : `A new session at ${where}` });
+    return list;
+  };
+
+  const draw = () => {
+    const list = choices();
+    if (!list.some((c) => c.id === pick)) {
+      pick = (list.find((c) => c.id !== 'new' && c.center === session.center) ?? list.find((c) => c.id === 'new') ?? list[0])?.id ?? null;
+    }
+    box.innerHTML = list.map((c) => `
+      <button type="button" class="chip${c.id === pick ? ' on' : ''}" data-to="${c.id}" aria-pressed="${c.id === pick}">${c.label}</button>`).join('');
+    label.hidden = !list.length;
+    if (dateInput.value > today) hint.textContent = 'That day is still to come. Pick today or earlier.';
+    else if (!list.length && changed && dateInput.value) hint.textContent = 'This game is already on that date. Pick another one.';
+    else if (!list.length) hint.textContent = 'Pick the date this game was bowled.';
+    else if (only && pick === 'new') hint.textContent = 'This is the session\'s only game, so the session moves with it, notes and all.';
+    else if (only) hint.textContent = 'This is the session\'s only game, so the session joins that one. Its notes go along.';
+    else hint.textContent = '';
+    btn.disabled = !pick;
+  };
+  dateInput.addEventListener('input', () => {
+    changed = true;
+    draw();
+  });
+  draw();
+
+  root.onclick = (e) => {
+    // Back replaces this screen, like the other edit screens, so the phone's Back button
+    // doesn't come back here from the summary.
+    if (e.target.closest('.tb-back')) {
+      e.preventDefault();
+      go(back, { replace: true });
+      return;
+    }
+    const to = e.target.closest('[data-to]');
+    if (to) {
+      pick = to.dataset.to;
+      draw();
+      return;
+    }
+    if (e.target.closest('[data-act="move"]') && pick) {
+      const into = moveGame(session, game, dateInput.value, pick === 'new' ? null : pick);
+      if (!into) { // moved or deleted from another copy of the app in the meantime
+        go('#/', { replace: true });
+        return;
+      }
+      toast(`Game moved to ${fmtDate(into.date)}`);
+      go(`#/summary/${into.id}/${gid}`, { replace: true });
+    }
+  };
 }
 
 // "3 strikes in 9 · 7.8 pins", plus pocket hits when enough were recorded.

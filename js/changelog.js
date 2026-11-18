@@ -4,6 +4,18 @@
 
 export const CHANGELOG = [
   {
+    version: 'v20261119-0257',
+    title: 'Monthly and lifetime stats, milestones, and moving games',
+    items: [
+      'Stats → Monthly: pick a month with ‹ › to see its average, high game, strikes and spares, how it compares with the month before, the best games of the month, and a month-by-month chart and table.',
+      'Stats → Lifetime: your totals since your first game (games, pins, strikes, spares, turkeys, 200+ games, clean games, splits picked up, centers and your favorite ball), and a score spread showing how often you break 150 and 200.',
+      'Milestones: first game, first 150 / 200 game, first turkey, 100 games bowled, a 500 series and more. Lifetime shows the ones you\'ve reached, with the date and a link to the game, and what\'s next up. A game that reaches one says so on its summary.',
+      'Logged a game on the wrong day? Open its summary and tap Move to another date. Pick the date, then the session it goes in: one you already have that day, or a new one at the same center and lane.',
+      'Changing a session\'s date (Edit on the session screen) now also puts it in the right place among your other sessions, so new high games, your average and goals count it on the right day.',
+      'A smoother app icon.',
+    ],
+  },
+  {
     version: 'v20261104-1013',
     title: 'Midnight lanes is now the main theme',
     items: [

@@ -11,7 +11,7 @@ import { icon } from '../ui.js';
 import { logLabel } from '../terms.js';
 import { APP_VERSION } from '../version.js';
 import { CHANGELOG } from '../changelog.js';
-import { esc, fmtPct, dateParts, avg, plural, todayISO, tapGuard } from '../util.js';
+import { esc, fmtPct, dateParts, avg, plural, todayISO, tapGuard, fmtMonth } from '../util.js';
 
 const RECENT_GAMES = GOAL_WINDOW; // the hero average and goals look at the same games
 const once = tapGuard(1000); // one session per tap, even if the screen hasn't changed yet
@@ -55,8 +55,7 @@ function sessionGroups(sessions) {
     months.set(key, [...(months.get(key) ?? []), s]);
   }
   return [...months].map(([key, list], i) => {
-    const [y, m] = key.split('-').map(Number);
-    const name = new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    const name = fmtMonth(key);
     const scores = list.flatMap((s) => s.games.filter((g) => g.done).map((g) => g.score));
     const sub = [scores.length && `avg ${Math.round(avg(scores))}`, plural(scores.length, 'game')].filter(Boolean).join(' · ');
     return `

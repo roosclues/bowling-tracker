@@ -1,9 +1,9 @@
 // End-to-end run of the app inside a phone-sized iframe.
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
-// welcome, form, summary300, pins, spareaim, game, summary, lanes, session, home, stats, statsfirst, statsspares, practicemiss, help,
-// lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, practice, goals, goalreached, minsettings, minhome,
+// welcome, form, summary300, pins, spareaim, game, summary, lanes, session, movegame, home, stats, statsfirst, statsspares, practicemiss, help,
+// lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, monthly, lifetime, practice, goals, goalreached, minsettings, minhome,
 // minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame.
-// Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "progress" step (a restore resets it).
+// Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "lifetime" step (a later restore resets it).
 // Add &size=360x780 for a smaller phone (the default is 412x915).
 
 const PARAMS = new URLSearchParams(location.search);
@@ -149,6 +149,7 @@ async function run() {
   check('perfect game goes to summary', W.location.hash.startsWith('#/summary/'), W.location.hash);
   check('perfect game scores 300', text('.final-score') === '300', text('.final-score'));
   check('the tab bar is back on the summary', tabsShown() && !D.body.classList.contains('in-game'));
+  check('a first game of 300 reaches milestones, the top one of each kind', text('#milestonePill') === 'Milestones: First game · Perfect game (300) · +2 more', text('#milestonePill'));
   stopAt('summary300');
 
   // ---- Game 2: mixed game with details, undo and edit ----
@@ -318,6 +319,95 @@ async function run() {
   await nav(`#/session/${sid}`);
   check('the session shows the note', text('#laneRow').startsWith('Lane 7 · Avoid · Ball return'), text('#laneRow'));
   stopAt('session');
+
+  // ---- Move a game to another date ----
+  {
+    const day = db().sessions[0].date;
+    const shift = (n) => new Date(Date.parse(day) + n * 864e5).toISOString().slice(0, 10);
+    const setDate = (sel, v) => {
+      $(sel).value = v;
+      $(sel).dispatchEvent(new W.Event('input', { bubbles: true }));
+    };
+    await nav(`#/session/${sid}/edit`);
+    check('editing a session with 2 games points to moving one game', text('#dateHint').startsWith('This moves all 2 games.') && text('#dateHint').includes('Move to another date'), text('#dateHint'));
+    await nav(`#/summary/${sid}/${gid2}`);
+    const steps = W.history.length;
+    await click('#moveGame');
+    check('Move opens on the game\'s date', W.location.hash === `#/move/${sid}/${gid2}` && $('#moveDate').value === day, `${W.location.hash} ${$('#moveDate')?.value}`);
+    check('it starts by asking for the date, with nothing to tap yet', !$('#moveTo .chip') && $('#moveToLabel').hidden && $('#moveBtn').disabled
+      && text('#moveHint') === 'Pick the date this game was bowled.', text('#moveHint'));
+    await click('.tb-back');
+    check('the back arrow returns to the summary without adding a step for the phone\'s Back button', W.location.hash === `#/summary/${sid}/${gid2}` && W.history.length === steps, `${W.location.hash} ${W.history.length} vs ${steps}`);
+    await click('#moveGame');
+    check('the date box stops at today', $('#moveDate').max === day, $('#moveDate').max);
+    setDate('#moveDate', shift(1));
+    check('a day still to come is refused', !$('#moveTo .chip') && $('#moveBtn').disabled && text('#moveHint').startsWith('That day is still to come'), text('#moveHint'));
+    setDate('#moveDate', day);
+    check('picking its own date again says so', $('#moveBtn').disabled && text('#moveHint').startsWith('This game is already on that date'), text('#moveHint'));
+    setDate('#moveDate', shift(-1));
+    check('another date offers a new session there', text('#moveTo .chip.on') === 'A new session at Test Lanes' && !$('#moveBtn').disabled, text('#moveTo'));
+    stopAt('movegame');
+    await click('#moveBtn');
+    let [a, b] = db().sessions;
+    check('the game moves to a new session the day before, listed first', db().sessions.length === 2 && a.date === shift(-1) && a.id !== sid
+      && a.games.length === 1 && a.games[0].id === gid2 && a.center === 'Test Lanes' && a.lane === '7' && a.ball === 'House 12 lb'
+      && b.id === sid && b.games.length === 1 && b.games[0].id === gid1, JSON.stringify(db().sessions.map((s) => [s.date, s.games.length])));
+    check('the moved game\'s summary opens', W.location.hash === `#/summary/${a.id}/${gid2}` && text('.topbar .t1') === 'Game 1 summary', W.location.hash);
+
+    // A session's only game takes the session (and its notes) along to the new date.
+    await nav(`#/session/${a.id}/edit`);
+    $('#notes').value = 'Wrong day';
+    setDate('#date', shift(1)); // and editing the date puts the session back in date order
+    $('#sessionForm').requestSubmit();
+    await sleep(80);
+    check('editing a session\'s date keeps sessions in date order', db().sessions.map((s) => s.id).join() === `${sid},${a.id}`, JSON.stringify(db().sessions.map((s) => s.date)));
+    await nav(`#/summary/${a.id}/${gid2}`);
+    await click('#moveGame');
+    setDate('#moveDate', shift(-2));
+    check('moving a session\'s only game says the session moves with it', text('#moveTo .chip.on') === 'Its own session at Test Lanes' && text('#moveHint').includes('only game'), `${text('#moveTo')} | ${text('#moveHint')}`);
+    await click('#moveBtn');
+    [a, b] = db().sessions;
+    check('the session itself moves', db().sessions.length === 2 && a.date === shift(-2) && a.notes === 'Wrong day' && a.games[0].id === gid2 && b.id === sid, JSON.stringify(db().sessions.map((s) => [s.id, s.date])));
+
+    // Back to the original day, into the session already there.
+    await click('#moveGame');
+    setDate('#moveDate', day);
+    check('the session already on that day is offered first and picked', D.querySelectorAll('#moveTo .chip').length === 2
+      && text('#moveTo .chip.on') === 'Test Lanes · lane 7 · 1 game' && text('#moveHint').includes('joins that one'), `${text('#moveTo')} | ${text('#moveHint')}`);
+    await click('#moveBtn');
+    const [only] = db().sessions;
+    check('joining it adds the game at the end and drops the empty session, keeping its notes', db().sessions.length === 1 && only.id === sid
+      && only.games.map((g) => g.id).join() === `${gid1},${gid2}` && only.notes === 'Keep my head down\nWrong day', JSON.stringify(only));
+    check('and opens it as game 2', W.location.hash === `#/summary/${sid}/${gid2}` && text('.topbar .t1') === 'Game 2 summary', W.location.hash);
+
+    // Into a session with a game in progress: the moved game goes ahead of it.
+    await nav(`#/session/${sid}`);
+    await click('[data-act="newgame"]');
+    const gid3 = W.location.hash.match(/#\/game\/\w+\/(\w+)/)?.[1];
+    await nav(`#/summary/${sid}/${gid2}`);
+    await click('#moveGame');
+    setDate('#moveDate', shift(-1));
+    await click('#moveBtn');
+    const away = db().sessions[0].id;
+    await click('#moveGame');
+    setDate('#moveDate', day);
+    await click('#moveBtn');
+    check('a game moved into a session with a game in progress goes before it', db().sessions.length === 1
+      && db().sessions[0].games.map((g) => g.id).join() === `${gid1},${gid2},${gid3}` && away !== sid, db().sessions[0].games.map((g) => g.id).join());
+    // Drop the unfinished game again; the app picks the change up like one from another copy.
+    {
+      const data = db();
+      data.sessions[0].games.pop();
+      localStorage.setItem('bowltrack.v1', JSON.stringify(data));
+      await sleep(100);
+    }
+    // Put the session's notes back the way they were for the checks below.
+    await nav(`#/session/${sid}/edit`);
+    $('#notes').value = 'Keep my head down';
+    $('#sessionForm').requestSubmit();
+    await sleep(80);
+  }
+
   await nav('#/');
   check('home shows session with scores', text('.li-scores').includes('300') && text('.li-scores').includes('225'), text('.li-scores'));
   check('home offers to bowl again at the last center', text('#bowlAgain') === 'Bowl at Test Lanes' && text('#bowlAgainInfo') === 'House 12 lb · Everything', `${text('#bowlAgain')} | ${text('#bowlAgainInfo')}`);
@@ -651,13 +741,75 @@ async function run() {
   check('undo restore brings the games back', text('.li-scores').includes('300'), text('.li-scores'));
 
   // ---- Progress over many sessions (made-up games that slowly get better) ----
-  storage.restoreBackup(JSON.stringify({ settings: { seenVersion: SW_VERSION }, sessions: fakeSessions() }));
+  storage.restoreBackup(JSON.stringify({ settings: { seenVersion: SW_VERSION, ...(SKIN ? { skin: SKIN } : {}) }, sessions: fakeSessions() }));
   await nav('#/stats');
   check('progress table compares first and last 9 of 18 games', D.querySelectorAll('#progress .tbl tbody tr').length >= 6 && text('#progress .card-h small') === 'first 9 vs last 9 games', text('#progress .card-h small'));
   check('progress says you are improving', text('#progress .verdict').startsWith("You're improving!"), text('#progress .verdict'));
   await click('[data-by="session"]');
   check('trend shows one point per session', $('[data-by="session"]').classList.contains('on') && text('#trend .c-val') === String(Math.round(db().sessions.at(-1).games.reduce((a, g) => a + g.score, 0) / 3)), text('#trend .c-val'));
   stopAt('progress');
+
+  // ---- Monthly and Lifetime (6 sessions: Sep 1-29 and Oct 6, 2026) ----
+  {
+    const games = db().sessions.flatMap((x) => x.games);
+    const pins = games.reduce((a, g) => a + g.score, 0);
+    const avgOf = (list) => Math.round(list.reduce((a, g) => a + g.score, 0) / list.length);
+    const sep = db().sessions.filter((x) => x.date.startsWith('2026-09')).flatMap((x) => x.games);
+    const oct = db().sessions.filter((x) => x.date.startsWith('2026-10')).flatMap((x) => x.games);
+    check('Stats has six tabs that fit or scroll', D.querySelectorAll('[data-subtab]').length === 6 && $('.subtabs').scrollWidth >= $('.subtabs').clientWidth);
+    await click('[data-subtab="monthly"]');
+    check('Monthly opens on the latest month', tabOn('monthly') && text('#monthName') === 'October 2026' && $('#monthNext').disabled, text('#monthName'));
+    check('Monthly hides the date range filter', $('#fDays').hidden && W.getComputedStyle($('#fDays')).display === 'none');
+    check("the month's tiles are its own games", text('.tiles .tile:first-child .tv') === String(avgOf(oct)) && text('.tiles .tile:nth-child(3) .tv') === '3', text('.tiles'));
+    check('October is compared with September', [...D.querySelectorAll('#monthCompare th')].map((th) => th.textContent).join() === ',Sep,Oct,Change'
+      && text('#monthCompare tbody tr:first-child td:nth-child(2)') === String(avgOf(sep)), text('#monthCompare'));
+    check('the month by month table has both months, newest first, with a chart', D.querySelectorAll('#months tbody tr').length === 2
+      && text('#months tbody tr:first-child td') === 'Oct' && !!$('#monthTrend svg .c-line'), text('#months'));
+    check("the month's high game links to it", !!$('#monthBests a[href^="#/summary/w5/"]'));
+    stopAt('monthly');
+    await click('#monthPrev');
+    check('‹ goes to September, the first month', text('#monthName') === 'September 2026' && $('#monthPrev').disabled
+      && text('#monthCompare').includes('your first month here') && text('.tiles .tile:nth-child(3) .tv') === '15', text('#monthCompare'));
+    await click('#months tr[data-month-key="2026-10"]');
+    check('tapping a month in the table opens it', text('#monthName') === 'October 2026' && !!$('#months tr.on button[aria-current]'));
+    check('the month table keeps its rows as table rows', !$('#months tr[role]') && D.querySelectorAll('#months tbody button').length === 2);
+
+    await click('[data-subtab="lifetime"]');
+    check('Lifetime counts every game and pin', tabOn('lifetime') && text('.tiles .tile:first-child .tv') === '18' && text('.tiles .tile:nth-child(2) .tv') === pins.toLocaleString(), text('.tiles'));
+    check('Lifetime says since when', text('#lifetimeSince') === `Since ${new Date(2026, 8, 1).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} · 6 sessions · 6 days bowled`, text('#lifetimeSince'));
+    check('the score spread adds up to every game', [...D.querySelectorAll('#spread .bar-val')].reduce((a, el) => a + Number(el.textContent.split(' ')[0]), 0) === 18, text('#spread'));
+    {
+      const reached = [...D.querySelectorAll('#reached li')].find((li) => li.textContent.includes('10 games bowled'));
+      check('10 games bowled was reached on Sep 22, linking to that game', !!reached && reached.textContent.includes('Sep 22')
+        && reached.querySelector('a').getAttribute('href') === '#/summary/w3/w3g0', reached?.textContent);
+      check('the 5 latest milestones show, the earlier ones fold away', D.querySelectorAll('#reached li').length === 5
+        && text('#reachedEarlier summary') === `Earlier (${D.querySelectorAll('#reachedEarlier li').length})` && !$('#reachedEarlier').open
+        && D.querySelectorAll('#reachedEarlier li').length > 0, text('#reachedEarlier summary'));
+      check('next up lists the 3 closest, a 200 game first at a best of 193', D.querySelectorAll('#nextUp li').length === 3
+        && text('#nextUp li:first-child') === 'First 200 gameyour best is 193', text('#nextUp'));
+      check('the rest shows how far to 25 games', [...D.querySelectorAll('#milestones details li')].some((li) => li.textContent.includes('25 games bowled') && li.textContent.includes('18/25')), text('#milestones details'));
+    }
+    stopAt('lifetime');
+    // Filters still apply to the totals, but not to milestones.
+    $('#fCenter').value = 'Test Lanes';
+    $('#fCenter').dispatchEvent(new W.Event('change'));
+    await sleep(50);
+    check('a filter keeps the Lifetime tab', tabOn('lifetime') && text('.tiles .tile:first-child .tv') === '18');
+    $('#fCenter').value = '';
+    $('#fCenter').dispatchEvent(new W.Event('change'));
+    await sleep(50);
+    // The game that reached a milestone says so, and the pill opens Lifetime.
+    await nav('#/summary/w0/w0g0');
+    check("the first game's summary shows its milestones", text('#milestonePill').startsWith('Milestone'), text('#milestonePill'));
+    await click('#milestonePill');
+    await sleep(120);
+    {
+      const top = $('#milestones')?.getBoundingClientRect().top;
+      check('the milestone pill opens Stats on Lifetime, at the Milestones card', W.location.hash === '#/stats' && tabOn('lifetime')
+        && top > 60 && top < W.innerHeight / 2, `${W.location.hash} top ${top}`);
+    }
+    await click('[data-subtab="overview"]');
+  }
 
   // ---- Coach: before you bowl ----
   check('the tab bar has a Coach tab', D.querySelectorAll('.tabbar a').length === 6 && !!$('.tabbar a[href="#/coach"]'));

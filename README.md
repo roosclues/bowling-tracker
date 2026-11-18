@@ -54,7 +54,8 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 | `js/scoring.js` | Bowling score rules, split detection |
 | `js/storage.js` | Saving, backup/restore, CSV export, sync between open copies |
 | `js/normalize.js` | Checks and repairs saved or restored data |
-| `js/stats.js` | Stat calculations, progress (first vs latest games), personal bests, goals, coaching tips |
+| `js/stats.js` | Stat calculations, progress (first vs latest games), months, lifetime totals, score spread, personal bests, goals, coaching tips |
+| `js/milestones.js` | Milestones (first 200 game, 100 games bowled…) and the game where each was reached |
 | `js/spares.js` | Spare aiming (3-6-9 system) from the bowler's strike line, adjusted by their own tries |
 | `js/coach.js` | The coach: before/during/after messages, reading a leave as a light or high hit, and answers to the questions you can tap |
 | `js/lanenotes.js` | Lane notes (Avoid / Good, problems, a note per center and lane) and the reminders built from them |

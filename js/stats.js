@@ -57,10 +57,15 @@ function repeatability(list, key) {
 
 export const MAX_GAME_NO = 4; // games 4, 5, ... of a session are grouped as "4+"
 
-export function computeStats(sessions) {
+// Every finished game as { session, game, number (its place in the session) }, oldest first.
+export function finishedGames(sessions) {
   const games = [];
   sessions.forEach((s) => s.games.forEach((g, i) => { if (g.done) games.push({ session: s, game: g, number: i + 1 }); }));
-  games.sort((a, b) => a.session.date.localeCompare(b.session.date));
+  return games.sort((a, b) => a.session.date.localeCompare(b.session.date));
+}
+
+export function computeStats(sessions) {
+  const games = finishedGames(sessions);
   const scores = games.map((x) => x.game.score);
 
   const shots = collectShots(sessions);
@@ -394,25 +399,30 @@ export function seriesScores(stats) {
     .filter((x) => x.score !== null);
 }
 
-// Strikes, longest run of strikes, and open frames in one finished game.
-function gameMarks(game) {
+// Strikes, longest run of strikes, turkeys (each separate run of 3 or more), open frames and
+// splits picked up in one finished game.
+export function gameMarks(game) {
   let strikes = 0;
   let run = 0;
   let streak = 0;
+  let turkeys = 0;
   let opens = 0;
+  let splitsMade = 0;
   game.frames.forEach((shots) => {
     shots.forEach((shot, i) => {
       if (!isFreshRack(shots, i)) return;
       if (shot.standing.length === 0) {
         strikes++;
-        streak = Math.max(streak, ++run);
+        if (++run === 3) turkeys++;
+        streak = Math.max(streak, run);
       } else {
         run = 0;
+        if (isSplit(shot.standing) && shots[i + 1]?.standing.length === 0) splitsMade++;
       }
     });
     if (shots[0].standing.length > 0 && shots[1]?.standing.length !== 0) opens++;
   });
-  return { strikes, streak, opens };
+  return { strikes, streak, turkeys, opens, splitsMade };
 }
 
 // Personal records, each with the game (and so the date) where it was first set.
@@ -429,6 +439,84 @@ export function personalBests(stats) {
     fewestOpens: best('opens', (a, b) => b < a),
     session: sessions.length ? sessions.reduce((a, b) => (b.average > a.average ? b : a)) : null,
     series: series.length ? series.reduce((a, b) => (b.score > a.score ? b : a)) : null,
+  };
+}
+
+// ---------- Months and lifetime ----------
+
+// One entry per calendar month with finished games, oldest first:
+// { key: 'YYYY-MM', sessions, st (computeStats of that month), days (days bowled) }.
+export function monthlyStats(sessions) {
+  const byMonth = new Map();
+  for (const s of sessions) {
+    const key = s.date.slice(0, 7);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key).push(s);
+  }
+  return [...byMonth]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, list]) => ({ key, sessions: list, st: computeStats(list) }))
+    .filter((m) => m.st.games.length)
+    .map((m) => ({ ...m, days: new Set(m.st.games.map((g) => g.session.date)).size }));
+}
+
+// Most games first: [{ name, games }] for a session field such as center or ball.
+function mostPlayed(stats, field) {
+  const counts = new Map();
+  for (const { session } of stats.games) {
+    const name = session[field];
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts].map(([name, games]) => ({ name, games })).sort((a, b) => b.games - a.games);
+}
+
+// Totals over every finished game in `stats`.
+export function lifetimeTotals(stats) {
+  const marks = stats.games.map((g) => gameMarks(g.game));
+  const sum = (key) => marks.reduce((a, m) => a + m[key], 0);
+  const series = seriesScores(stats);
+  return {
+    games: stats.games.length,
+    sessions: new Set(stats.games.map((g) => g.session)).size,
+    days: new Set(stats.games.map((g) => g.session.date)).size,
+    firstDate: stats.games[0]?.session.date ?? null,
+    frames: stats.frames,
+    pins: stats.games.reduce((a, g) => a + g.game.score, 0),
+    strikes: stats.strikes,
+    sparesMade: stats.sparesMade,
+    spareChances: stats.spareChances,
+    splitsMade: sum('splitsMade'),
+    turkeys: sum('turkeys'),
+    cleanGames: marks.filter((m) => m.opens === 0).length,
+    over200: stats.games.filter((g) => g.game.score >= 200).length,
+    highSeries: series.length ? Math.max(...series.map((x) => x.score)) : null,
+    centers: mostPlayed(stats, 'center'),
+    balls: mostPlayed(stats, 'ball'),
+  };
+}
+
+export const SPREAD_BUCKETS = [
+  { label: 'Under 100', min: 0 },
+  { label: '100–124', min: 100 },
+  { label: '125–149', min: 125 },
+  { label: '150–174', min: 150 },
+  { label: '175–199', min: 175 },
+  { label: '200–249', min: 200 },
+  { label: '250+', min: 250 },
+];
+
+// How many games fall in each score range, and how often you break 150 and 200.
+export function scoreSpread(stats) {
+  const scores = stats.games.map((g) => g.game.score);
+  const rows = SPREAD_BUCKETS.map((b, i) => {
+    const max = SPREAD_BUCKETS[i + 1]?.min ?? Infinity;
+    return { label: b.label, value: scores.filter((s) => s >= b.min && s < max).length };
+  });
+  return {
+    rows,
+    games: scores.length,
+    pct150: pct(scores.filter((s) => s >= 150).length, scores.length),
+    pct200: pct(scores.filter((s) => s >= 200).length, scores.length),
   };
 }
 

@@ -50,6 +50,7 @@ const routes = [
   [/^#\/edit\/(\w+)\/(\w+)\/(\d)\/(\d)$/, game.renderEdit, 'bowl'],
   [/^#\/review\/(\w+)\/(\w+)$/, game.renderReview, 'bowl'],
   [/^#\/summary\/(\w+)\/(\w+)$/, summary.render, 'bowl'],
+  [/^#\/move\/(\w+)\/(\w+)$/, session.renderMove, 'bowl'],
   [/^#\/stats$/, stats.render, 'stats'],
   [/^#\/settings$/, settings.render, 'settings'],
   [/^#\/help$/, help.render, 'help'],

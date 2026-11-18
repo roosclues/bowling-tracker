@@ -86,6 +86,48 @@ export function findGame(sid, gid) {
   return findSession(sid)?.games.find((g) => g.id === gid);
 }
 
+// Sessions stay in date order; stats such as "new high game" and goals read them in this order.
+// The sort is stable, so sessions on the same day keep the order they were bowled in.
+export function sortSessions() {
+  db.sessions.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Moves a finished game to `date`: into the session `targetId` (one on that date), or into a
+// new session with the same center, lane, ball and oil. A session's only game takes the session
+// with it, so its notes stay. A session left with no games is removed. Returns the game's
+// session, or null when the game is no longer in `session` (a second tap, or another open copy
+// of the app moved it first): nothing changes then.
+export function moveGame(session, game, date, targetId = null) {
+  if (!session.games.includes(game)) return null;
+  const target = targetId ? findSession(targetId) : null;
+  let into;
+  if (target && target !== session) {
+    session.games.splice(session.games.indexOf(game), 1);
+    // Ahead of a game still in progress, so that one stays the session's last game.
+    const open = target.games.findIndex((g) => !g.done);
+    target.games.splice(open < 0 ? target.games.length : open, 0, game);
+    if (!session.games.length) {
+      // Its notes go along rather than being lost with it.
+      target.notes = [target.notes, session.notes].filter(Boolean).join('\n');
+      db.sessions.splice(db.sessions.indexOf(session), 1);
+    }
+    into = target;
+  } else if (session.games.length === 1) {
+    session.date = date;
+    into = session;
+  } else {
+    session.games.splice(session.games.indexOf(game), 1);
+    into = { id: uid(), date, center: session.center, lane: session.lane, ball: session.ball, oil: session.oil, notes: '', games: [game] };
+    db.sessions.push(into);
+  }
+  for (const goal of db.settings.goals) {
+    if (goal.reachedGame === game.id) goal.reachedOn = into.date;
+  }
+  sortSessions();
+  save();
+  return into;
+}
+
 // The most recent unfinished game, if any.
 export function currentGame() {
   for (let i = db.sessions.length - 1; i >= 0; i--) {

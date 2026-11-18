@@ -20,6 +20,7 @@ export function render(root) {
           <li>Press <strong>Save</strong>. Made a mistake? <strong>Undo</strong> brings the last ball back so you can fix it.</li>
         </ol>
         <p class="hint"><strong>What to log</strong>, at the bottom of the game screen, sets how much you enter. <strong>Pins only</strong> is quickest. <strong>Everything</strong> adds the breakpoint, pin hit, ball speed and how it felt. After the game, tap any ball on the summary, or <strong>Add details</strong>, to fill in your feet, arrow and the rest. Each ball starts from the line of the ball before it, and the pins stay as you entered them.</p>
+        <p class="hint"><strong>Wrong date?</strong> To move one game, tap <strong>Move to another date</strong> on its summary. To move a whole session, tap Edit on the session screen and change the date.</p>
       </section>
 
       <section class="card">
@@ -31,6 +32,7 @@ export function render(root) {
           <li><strong>Lane notes</strong> (session and game summary screens): mark a lane Avoid or Good and note what was wrong. Home and the session form remind you next time, so you can ask for another lane.</li>
           <li><strong>Goals</strong> (Home): set a target, like 60% spares, and watch your last 10 games close in on it.</li>
           <li><strong>Stats</strong> shows what's working: best lines, how accurate you are, how your speed and feel affect strikes, and how your scores change from game to game.</li>
+          <li><strong>Monthly and Lifetime</strong> (Stats): how each month went and how it compares with the month before; your totals since your first game, how your scores spread out, and milestones like your first 200 game or 100 games bowled.</li>
         </ol>
       </section>
 

@@ -714,14 +714,52 @@ button.box { cursor: pointer; }
   position: sticky; top: calc(60px + env(safe-area-inset-top)); z-index: 4;
   display: flex; margin: 10px -16px 4px; padding: 0 16px;
   background: var(--page); border-bottom: 1px solid var(--line);
+  overflow-x: auto; scrollbar-width: none; /* six tabs scroll sideways on narrow phones */
 }
+.subtabs::-webkit-scrollbar { display: none; }
 .subtab {
-  position: relative; flex: 1; min-height: 46px; padding: 0 4px; border: 0; background: none;
+  position: relative; flex: 1 0 auto; min-height: 46px; padding: 0 6px; border: 0; background: none;
   color: var(--ink-2); font: inherit; font-size: 0.9rem; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .subtab[aria-selected="true"] { color: var(--ink); }
 .subtab[aria-selected="true"]::after { content: ""; position: absolute; left: 14%; right: 14%; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: var(--accent); }
 .subtab:focus-visible { outline: 2px solid var(--link); outline-offset: -4px; border-radius: 8px; }
+
+/* Stats: Monthly and Lifetime */
+.filters select[hidden] { display: none; }
+.month-nav { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.month-nav .btn { flex: none; width: 46px; min-height: 46px; padding: 0; }
+.month-nav .btn:disabled { opacity: 0.35; }
+.month-title { flex: 1; text-align: center; line-height: 1.2; }
+.month-title strong { display: block; font-size: 1.15rem; }
+.month-title small { color: var(--muted); font-size: 0.8rem; }
+.month-row { cursor: pointer; }
+.month-row .link { padding: 0; font-size: inherit; color: inherit; }
+.month-row.on td { background: var(--accent-soft); }
+.month-row.on .link { font-weight: 700; }
+#monthTrend { margin-bottom: 6px; }
+#spread .bar-row { grid-template-columns: 76px 1fr 64px; }
+#spread .bar-val { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Rows with no date don't keep room for one, and a long name wraps instead of squeezing its label. */
+.kv-date:empty { display: none; }
+#lifetime .kv-label { flex: 0 1 auto; }
+#lifetime .kv-val { flex: 1; min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.sub-h { margin: 12px 0 2px; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+#milestones { scroll-margin-top: calc(118px + env(safe-area-inset-top)); } /* clear the top bar and the tabs */
+.milestone-list li { position: relative; align-items: center; }
+.milestone-list a.kv-label { color: var(--ink); text-decoration: none; font-weight: 600; }
+.milestone-list a.kv-label::after { content: ""; position: absolute; inset: 0; } /* the whole row opens the game */
+.milestone-list .kv-date { min-width: 0; }
+.milestone-list .chev { flex: none; display: grid; }
+.milestone-list .locked .kv-label { color: var(--ink-2); }
+.milestone-list .locked .kv-note { flex: none; color: var(--muted); font-weight: 600; text-align: right; }
+.pill.milestone { border: 0; font: inherit; font-size: 0.78rem; font-weight: 700; line-height: 1.35; cursor: pointer; max-width: 100%; }
+
+/* Move a game to another date */
+.field label[hidden] { display: none; }
+.move-to { display: flex; flex-direction: column; gap: 8px; }
+.move-to .chip { text-align: left; border-radius: 12px; }
+.move-to:empty { display: none; }
 
 /* ---------- Toast, dialog, strike flash ---------- */
 #toast {

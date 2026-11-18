@@ -1,34 +1,51 @@
-// Stats, in four tabs under one set of filters:
+// Stats, in six tabs under one set of filters:
 //   Overview   - headline numbers, are you improving, personal bests, tips, score trend
+//   Monthly    - one calendar month, compared with the month before, and month by month
+//   Lifetime   - totals since your first game, score spread, milestones
 //   First ball - best lines, accuracy, where the ball hit, game by game, speed
 //   Spares     - spare rates and each common leave, with its aim and your practice results
 //   Feel       - how "how it felt" tags line up with strikes
+// Monthly and Lifetime pick their own dates, so the date range filter is hidden there.
 
 import { db } from '../storage.js';
 import {
   computeStats, filterSessions, tips, progress, personalBests, sessionAverages, spareAimFor, practiceByLeave,
-  speedBands, GOAL_TYPES, MAX_GAME_NO,
+  speedBands, GOAL_TYPES, MAX_GAME_NO, monthlyStats, lifetimeTotals, scoreSpread,
 } from '../stats.js';
+import { milestones, nextMilestones, milestoneProgress } from '../milestones.js';
 import { lineChart, barList, calendarHeat } from '../charts.js';
 import { miniPins } from '../pins.js';
 import { HITS, infoButton, carryNote } from '../terms.js';
-import { topbar, tipsHTML, kvRow } from '../ui.js';
-import { esc, fmtPct, fmtDate, fmtShortDate, pct, plural, go, avg, fmtSpeed, SPEED_UNITS } from '../util.js';
+import { topbar, tipsHTML, kvRow, icon } from '../ui.js';
+import { esc, fmtPct, fmtDate, fmtShortDate, fmtMonth, pct, plural, go, avg, fmtSpeed, SPEED_UNITS } from '../util.js';
 
 const filters = { days: 0, center: '', ball: '', oil: '' };
+let month = null; // 'YYYY-MM' shown on Monthly; the latest month until you pick another
 const MIN_COMBO = 3;
 const MIN_CARRY = 5; // pocket hits before the carry card shows its numbers
 const CAL_NEAR = 5;  // pins from your average for the lighter calendar shades
 const CAL_FAR = 15;  // ...and for the darkest
 let trendBy = null; // 'session' or 'game'; picked automatically until you choose
 let tab = 'overview';
+let scrollToCard = null; // a card to bring into view on the next render, then forgotten
+const REACHED_SHOWN = 5; // milestones listed before the rest fold under "Earlier"
 
-const TABS = [['overview', 'Overview'], ['first', 'First ball'], ['spares', 'Spares'], ['feel', 'Feel']];
+const TABS = [['overview', 'Overview'], ['monthly', 'Monthly'], ['lifetime', 'Lifetime'], ['first', 'First ball'], ['spares', 'Spares'], ['feel', 'Feel']];
+const OWN_DATES = ['monthly', 'lifetime'];
 
 // Opens Stats on Overview, filtered to one center (from a session's screen).
 export function showStatsFor({ center = '' } = {}) {
   Object.assign(filters, { days: 0, center, ball: '', oil: '' });
   tab = 'overview';
+  go('#/stats');
+}
+
+// Opens Stats on one tab with no filters, scrolled to the card `anchor` if given (the summary's
+// milestone pill opens Lifetime at Milestones).
+export function showStatsTab(key, anchor = null) {
+  Object.assign(filters, { days: 0, center: '', ball: '', oil: '' });
+  tab = key;
+  scrollToCard = anchor;
   go('#/stats');
 }
 
@@ -366,6 +383,192 @@ function feelCard(st) {
     </section>`;
 }
 
+// ---------- Monthly ----------
+
+// Where the picked month sits in `months` (from monthlyStats); the latest month when the picked
+// one has no games under the current filters.
+function monthIndex(months) {
+  if (!months.some((m) => m.key === month)) month = months.at(-1).key;
+  return months.findIndex((m) => m.key === month);
+}
+
+function monthCompareCard(cur, prev) {
+  if (!prev) {
+    return `
+      <section class="card" id="monthCompare">
+        <div class="card-h"><h3>Compared with the month before</h3></div>
+        <p class="hint">${fmtMonth(cur.key)} is your first month here. Bowl next month and you'll see how it compares.</p>
+      </section>`;
+  }
+  const a = fmtMonth(prev.key, 'short');
+  const b = fmtMonth(cur.key, 'short');
+  const rows = progressRows({ first: prev.st, last: cur.st });
+  const d = Number(rows[0].to) - Number(rows[0].from);
+  const line = d > 0 ? `<strong>Your average is up ${plural(d, 'pin')}</strong> on ${fmtMonth(prev.key)}.`
+    : d < 0 ? `<strong>Your average is down ${plural(-d, 'pin')}</strong> on ${fmtMonth(prev.key)}.`
+    : `<strong>Your average is the same</strong> as in ${fmtMonth(prev.key)}.`;
+  return `
+    <section class="card" id="monthCompare">
+      <div class="card-h"><h3>vs ${fmtMonth(prev.key)}</h3><small>${plural(prev.st.games.length, 'game')} then</small></div>
+      <p class="verdict">${line}</p>
+      ${table(`
+        <thead><tr><th></th><th class="num">${a}</th><th class="num">${b}</th><th class="num">Change</th></tr></thead>
+        <tbody>${rows.map((r) => `
+          <tr>
+            <td>${r.label}</td>
+            <td class="num">${r.from}</td>
+            <td class="num"><strong>${r.to}</strong></td>
+            <td class="num trend ${r.state}">${r.mark} ${STATE_WORD[r.state]}</td>
+          </tr>`).join('')}</tbody>`, 'progress')}
+    </section>`;
+}
+
+function monthBestsCard(st) {
+  const b = personalBests(st);
+  const side = (entry) => fmtShortDate(entry.session.date);
+  const high = `<a href="#/summary/${b.high.session.id}/${b.high.game.id}">${b.high.score}</a>`;
+  return `
+    <section class="card" id="monthBests">
+      <div class="card-h"><h3>Best of the month</h3></div>
+      <ul class="kv">
+        ${kvRow('High game', high, { side: side(b.high) })}
+        ${kvRow('Most strikes in a game', b.strikes.strikes, { side: side(b.strikes) })}
+        ${b.session ? kvRow('Best session average', Math.round(b.session.average), { note: plural(b.session.games, 'game'), side: side(b.session) }) : ''}
+        ${kvRow('Fewest open frames', b.fewestOpens.opens, { note: b.fewestOpens.opens === 0 ? 'a clean game!' : '', side: side(b.fewestOpens) })}
+      </ul>
+    </section>`;
+}
+
+function monthsCard(months) {
+  return `
+    <section class="card" id="months">
+      <div class="card-h"><h3>Month by month</h3><small>tap a month to open it</small></div>
+      ${months.length >= 2 ? '<div id="monthTrend"></div>' : ''}
+      ${table(`
+        <thead><tr><th>Month</th><th class="num">Games</th><th class="num">Avg</th><th class="num">High</th><th class="num">Strikes</th><th class="num">Spares</th></tr></thead>
+        <tbody>${months.slice().reverse().map((m) => `
+          <tr class="month-row${m.key === month ? ' on' : ''}" data-month-key="${m.key}" data-top>
+            <td><button type="button" class="link" aria-label="Open ${fmtMonth(m.key)}"${m.key === month ? ' aria-current="true"' : ''}>${fmtMonth(m.key, 'short')}</button></td>
+            <td class="num">${m.st.games.length}</td>
+            <td class="num"><strong>${Math.round(m.st.average)}</strong></td>
+            <td class="num">${m.st.high}</td>
+            <td class="num">${fmtPct(m.st.strikes, m.st.firstBalls)}</td>
+            <td class="num">${fmtPct(m.st.sparesMade, m.st.spareChances)}</td>
+          </tr>`).join('')}</tbody>`)}
+    </section>`;
+}
+
+function monthlyBody(months) {
+  const i = monthIndex(months);
+  const cur = months[i];
+  const prev = months[i - 1] ?? null;
+  const next = months[i + 1] ?? null;
+  const st = cur.st;
+  const step = (m, id, label, ico) => `<button type="button" class="btn" id="${id}" aria-label="${label}"${m ? ` data-month-key="${m.key}"` : ' disabled'}>${icon(ico, 22)}</button>`;
+  return `
+    <div class="month-nav">
+      ${step(prev, 'monthPrev', 'Month before', 'chevL')}
+      <div class="month-title"><strong id="monthName">${fmtMonth(cur.key)}</strong><small>${plural(cur.days, 'day')} bowled</small></div>
+      ${step(next, 'monthNext', 'Month after', 'chevR')}
+    </div>
+    <div class="tiles">
+      ${tile(Math.round(st.average), 'Average')}
+      ${tile(st.high, 'High game')}
+      ${tile(st.games.length, 'Games')}
+      ${tile(fmtPct(st.strikes, st.firstBalls), 'Strikes')}
+      ${tile(fmtPct(st.sparesMade, st.spareChances), 'Spares made')}
+      ${tile((st.opens / st.games.length).toFixed(1), 'Open frames a game')}
+    </div>
+    ${monthCompareCard(cur, prev)}
+    ${monthBestsCard(st)}
+    ${monthsCard(months)}`;
+}
+
+// ---------- Lifetime ----------
+
+function totalsCard(st, t) {
+  const center = t.centers[0];
+  const ball = t.balls[0];
+  return `
+    <section class="card" id="lifetime">
+      <div class="card-h"><h3>Totals</h3></div>
+      <ul class="kv">
+        ${kvRow('Average', Math.round(st.average))}
+        ${kvRow('High game', st.high)}
+        ${t.highSeries ? kvRow('High series', t.highSeries, { note: '3 games' }) : ''}
+        ${kvRow('Frames bowled', t.frames.toLocaleString())}
+        ${kvRow('Spares made', t.sparesMade, { note: `of ${t.spareChances}` })}
+        ${kvRow('Splits picked up', t.splitsMade)}
+        ${kvRow(`Clean games ${infoButton('clean')}`, t.cleanGames)}
+        ${kvRow('Days bowled', t.days, { note: plural(t.sessions, 'session') })}
+        ${center ? kvRow('Centers', t.centers.length, { note: `most at ${esc(center.name)} (${plural(center.games, 'game')})` }) : ''}
+        ${ball ? kvRow('Favorite ball', esc(ball.name), { note: plural(ball.games, 'game') }) : ''}
+      </ul>
+    </section>`;
+}
+
+function spreadCard(st) {
+  const s = scoreSpread(st);
+  return `
+    <section class="card" id="spread">
+      <div class="card-h"><h3>Score spread</h3><small>${plural(s.games, 'game')}</small></div>
+      ${barList(s.rows.map((r) => ({ label: r.label, value: r.value, display: r.value ? `${r.value} · ${pct(r.value, s.games)}%` : '0' })))}
+      <p class="hint">You break 150 in <strong>${s.pct150}%</strong> of your games and 200 in <strong>${s.pct200}%</strong>.</p>
+    </section>`;
+}
+
+function milestonesCard() {
+  const list = milestones(db.sessions);
+  const got = list.filter((m) => m.done).sort((a, b) => b.done.date.localeCompare(a.done.date));
+  const next = nextMilestones(list);
+  const locked = list.filter((m) => !m.done);
+  const row = (m) => `
+    <li>
+      <a class="kv-label" href="#/summary/${m.done.sid}/${m.done.gid}">${esc(m.label)}</a>
+      <span class="kv-date">${fmtShortDate(m.done.date)}</span>
+      <span class="chev" aria-hidden="true">${icon('chevR', 16)}</span>
+    </li>`;
+  const todo = (m) => `<li class="locked"><span class="kv-label">${esc(m.label)}</span><span class="kv-note">${milestoneProgress(m)}</span></li>`;
+  return `
+    <section class="card" id="milestones">
+      <div class="card-h"><h3>Milestones</h3><small>${got.length} of ${list.length}</small></div>
+      ${next.length ? `
+        <h4 class="sub-h">Next up</h4>
+        <ul class="kv milestone-list" id="nextUp">${next.map(todo).join('')}</ul>` : ''}
+      ${got.length ? `
+        <h4 class="sub-h">Reached</h4>
+        <ul class="kv milestone-list" id="reached">${got.slice(0, REACHED_SHOWN).map(row).join('')}</ul>` : ''}
+      ${got.length > REACHED_SHOWN ? `
+        <details class="table-view" id="reachedEarlier">
+          <summary>Earlier (${got.length - REACHED_SHOWN})</summary>
+          <ul class="kv milestone-list">${got.slice(REACHED_SHOWN).map(row).join('')}</ul>
+        </details>` : ''}
+      ${locked.length ? `
+        <details class="table-view">
+          <summary>Still to reach (${locked.length})</summary>
+          <ul class="kv milestone-list">${locked.map(todo).join('')}</ul>
+        </details>` : ''}
+      <p class="hint">Milestones count all your games, whatever the filters above. Tap one to open the game where you reached it.</p>
+    </section>`;
+}
+
+function lifetimeBody(st) {
+  const t = lifetimeTotals(st);
+  return `
+    <p class="meta" id="lifetimeSince">Since ${fmtDate(t.firstDate)} · ${plural(t.sessions, 'session')} · ${plural(t.days, 'day')} bowled</p>
+    <div class="tiles">
+      ${tile(t.games.toLocaleString(), 'Games')}
+      ${tile(t.pins.toLocaleString(), 'Total pins')}
+      ${tile(t.strikes.toLocaleString(), 'Strikes')}
+      ${tile(t.sparesMade.toLocaleString(), 'Spares made')}
+      ${tile(t.turkeys, `Turkeys ${infoButton('turkey')}`)}
+      ${tile(t.over200, '200+ games')}
+    </div>
+    ${totalsCard(st, t)}
+    ${spreadCard(st)}
+    ${milestonesCard()}`;
+}
+
 function options(values, selected, allLabel) {
   return `<option value="">${allLabel}</option>` +
     values.map((v) => `<option value="${esc(v)}"${v === selected ? ' selected' : ''}>${esc(v)}</option>`).join('');
@@ -379,16 +582,25 @@ export function render(root) {
   if (!centers.includes(filters.center)) filters.center = '';
   if (!balls.includes(filters.ball)) filters.ball = '';
   if (!oils.includes(filters.oil)) filters.oil = '';
-  const sessions = filterSessions(db.sessions, filters);
+  const ownDates = OWN_DATES.includes(tab);
+  const sessions = filterSessions(db.sessions, ownDates ? { ...filters, days: 0 } : filters);
   const st = computeStats(sessions);
   const hints = tips(st, db.settings.hand, sessions, db.settings.speedUnit, (leave) => spareAimFor(leave, db.sessions, db.practice, db.settings.hand));
-  const filtered = filters.days || filters.center || filters.ball || filters.oil;
+  const filtered = (!ownDates && filters.days) || filters.center || filters.ball || filters.oil;
   const practiced = db.practice.length;
   const practiceMade = db.practice.filter((p) => p.made).length;
 
   let body = '';
   let trend = null;
-  if (tab === 'overview') {
+  let months = null;
+  if (!st.games.length) {
+    // The empty message below covers it.
+  } else if (tab === 'monthly') {
+    months = monthlyStats(sessions);
+    body = monthlyBody(months);
+  } else if (tab === 'lifetime') {
+    body = lifetimeBody(st);
+  } else if (tab === 'overview') {
     trend = trendCard(st, sessionAverages(st));
     body = `
       <div class="tiles">
@@ -435,7 +647,7 @@ export function render(root) {
     ${topbar({ title: 'Stats' })}
     <div class="page">
       <div class="filters">
-        <select id="fDays" aria-label="Date range">
+        <select id="fDays" aria-label="Date range"${ownDates ? ' hidden' : ''}>
           <option value="0"${filters.days === 0 ? ' selected' : ''}>All time</option>
           <option value="30"${filters.days === 30 ? ' selected' : ''}>Last 30 days</option>
           <option value="90"${filters.days === 90 ? ' selected' : ''}>Last 90 days</option>
@@ -459,6 +671,31 @@ export function render(root) {
   if (trend && trend.points.length >= 2) {
     lineChart(root.querySelector('#trend'), trend.points, { refValue: Math.round(st.average), refLabel: 'avg' });
   }
+  // The tab strip scrolls sideways on narrow phones; keep the open tab in sight.
+  const strip = root.querySelector('.subtabs');
+  const openTab = strip?.querySelector('[aria-selected="true"]');
+  if (openTab) strip.scrollLeft = Math.max(0, openTab.offsetLeft - (strip.clientWidth - openTab.offsetWidth) / 2);
+  if (scrollToCard) {
+    // After the router has put the new screen at the top.
+    const card = root.querySelector(scrollToCard);
+    scrollToCard = null;
+    if (card) setTimeout(() => card.scrollIntoView({ block: 'start' }), 0);
+  }
+
+  if (months?.length >= 2) {
+    const points = months.map((m) => ({ value: Math.round(m.st.average), label: `${fmtMonth(m.key)} · ${plural(m.st.games.length, 'game')}` }));
+    lineChart(root.querySelector('#monthTrend'), points, { refValue: Math.round(st.average), refLabel: 'avg' });
+  }
+  // The arrows next to the month name and the rows of the month table. A month picked from
+  // the table, at the bottom of the page, opens at the top.
+  root.querySelectorAll('[data-month-key]').forEach((el) => {
+    el.onclick = () => {
+      month = el.dataset.monthKey;
+      render(root);
+      if ('top' in el.dataset) window.scrollTo({ top: 0 });
+      else root.querySelector(`#${el.id}`)?.focus();
+    };
+  });
   root.querySelectorAll('[data-by]').forEach((btn) => {
     btn.onclick = () => { trendBy = btn.dataset.by; render(root); };
   });
