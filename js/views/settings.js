@@ -14,7 +14,7 @@ const LEAGUE_PCTS = [80, 90, 100];
 // "Your book average: 168 (12 league games) · handicap 46 a game".
 function leagueNow() {
   const st = leagueStanding(db.sessions, db.settings.league);
-  if (st.average == null) return `Your handicap starts after ${LEAGUE_MIN_GAMES} league games (${st.games} so far).`;
+  if (st.average == null) return `Your handicap starts after ${LEAGUE_MIN_GAMES} league games <span class="nowrap">(${st.games} so far).</span>`;
   return `Your book average: <strong>${st.average}</strong> (${st.typed ? 'from your league sheet' : plural(st.games, 'league game')}) · handicap <strong>${st.handicap}</strong> a game`;
 }
 

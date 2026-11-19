@@ -211,7 +211,7 @@ function trendCard(st, perSession) {
       </div>
       ${points.length >= 2 ? '<div id="trend"></div>' : `<p class="hint">Bowl at least 2 ${by === 'session' ? 'sessions' : 'games'} to see a trend.</p>`}
       ${smooth ? `<p class="c-legend" id="trendLegend"><span><i class="faint"></i>Each game</span><span><i class="avg"></i>${ROLL}-game average</span></p>` : ''}
-      ${swing ? `<p class="hint" id="swing">Most games land within <strong>±${swing.sd} pins</strong> of your average (${swing.within} of ${swing.games}).</p>` : ''}
+      ${swing ? `<p class="hint" id="swing">Most games land within <strong>±${swing.sd} pins</strong> of your average <span class="nowrap">(${swing.within} of ${swing.games}).</span></p>` : ''}
       <details class="table-view">
         <summary>Show as table</summary>
         ${by === 'session' ? table(`

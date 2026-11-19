@@ -285,6 +285,7 @@ textarea { resize: vertical; }
 .tiles.four { grid-template-columns: repeat(4, 1fr); }
 .tiles.pairs { grid-template-columns: repeat(2, 1fr); }
 .stat-link { display: block; margin: -2px 0 4px; text-align: left; }
+.nowrap { white-space: nowrap; }
 .tile {
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow);
   padding: 12px 6px 10px; text-align: center;

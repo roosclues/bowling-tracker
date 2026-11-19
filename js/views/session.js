@@ -249,7 +249,7 @@ function leagueLine(s, series) {
   if (!s.league || !db.settings.league.on) return '';
   const st = leagueStanding(db.sessions, db.settings.league, s);
   const text = st.handicap == null
-    ? `Handicap starts after ${LEAGUE_MIN_GAMES} league games (${st.games} so far).`
+    ? `Handicap starts after ${LEAGUE_MIN_GAMES} league games <span class="nowrap">(${st.games} so far).</span>`
     : [`Handicap ${st.handicap} a game`, series != null && `series <strong>${series + 3 * st.handicap}</strong> with handicap`].filter(Boolean).join(' · ');
   return `<p class="meta" id="leagueLine"><span class="tag-league">League</span> ${text}</p>`;
 }
