@@ -13,8 +13,9 @@
 // shot = { standing: [pins], feet, target, breakpoint, hit, speed (mph), tags: [], note }
 
 import { scoreGame, knocked } from './scoring.js';
-import { normalizeDB } from './normalize.js';
-import { goalsCrossed } from './stats.js';
+import { normalizeDB, compactJSON } from './normalize.js';
+import { dataChanged } from './stats.js';
+import { goalsCrossed } from './goals.js';
 import { todayISO, uid } from './util.js';
 
 const KEY = 'bowltrack.v1';
@@ -46,10 +47,12 @@ function load() {
 }
 
 export const db = load();
+dataChanged();
 
 export function save() {
+  dataChanged(); // the stats worked out so far are out of date
   try {
-    localStorage.setItem(KEY, JSON.stringify(db));
+    localStorage.setItem(KEY, compactJSON(db));
     return true;
   } catch (e) {
     alert('Could not save your data: ' + e.message + '\nPlease make a backup from Settings.');
@@ -67,6 +70,7 @@ window.addEventListener('storage', (e) => {
   if (e.key !== KEY || e.newValue == null) return;
   try {
     Object.assign(db, normalizeDB(JSON.parse(e.newValue)));
+    dataChanged();
     changeListeners.forEach((fn) => fn());
   } catch { /* ignore unreadable writes */ }
 });
@@ -193,7 +197,7 @@ function download(blob, filename) {
 
 // Share sheet (Drive, Gmail, etc.) when asked and supported, otherwise a plain download.
 // Returns false only when the person closed the share sheet without sending.
-async function deliver(blob, filename, share) {
+export async function deliver(blob, filename, share) {
   const file = new File([blob], filename, { type: blob.type });
   if (share && navigator.canShare?.({ files: [file] })) {
     try {
@@ -220,7 +224,7 @@ export async function downloadBackup({ share = false } = {}) {
   const stamp = todayISO();
   // The file itself records this backup, so restoring it doesn't bring back an old reminder.
   const snapshot = { ...db, settings: { ...db.settings, sessionsSinceBackup: 0, lastBackup: stamp } };
-  const text = JSON.stringify(snapshot, null, 1);
+  const text = compactJSON(snapshot, 1);
   const sent = share
     ? await deliver(new Blob([text], { type: 'text/plain' }), `bowling-backup-${stamp}.txt`, true)
     : await deliver(new Blob([text], { type: 'application/json' }), `bowling-backup-${stamp}.json`, false);
@@ -240,7 +244,7 @@ export function restoreBackup(text) {
     throw new Error('This file is not a Bowling Tracker backup.');
   }
   const clean = normalizeDB(data);
-  try { localStorage.setItem(PREV_KEY, JSON.stringify(db)); } catch { /* storage full */ }
+  try { localStorage.setItem(PREV_KEY, compactJSON(db)); } catch { /* storage full */ }
   Object.assign(db, clean);
   save();
   return clean.sessions.length;

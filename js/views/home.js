@@ -1,7 +1,8 @@
 // Home: continue/start bowling, practice and goals, headline stats, session history.
 
 import { db, currentGame, backupDue } from '../storage.js';
-import { computeStats, progress, goalStatus, practiceByLeave, GOAL_WINDOW, GOAL_MIN_GAMES } from '../stats.js';
+import { computeStats, progress, practiceByLeave } from '../stats.js';
+import { goalStatus, GOAL_WINDOW, GOAL_MIN_GAMES } from '../goals.js';
 import { goalListHTML } from './goals.js';
 import { startSession } from './session.js';
 import { showLanes } from './lanes.js';
@@ -10,7 +11,7 @@ import { sparkline } from '../charts.js';
 import { icon } from '../ui.js';
 import { logLabel } from '../terms.js';
 import { APP_VERSION } from '../version.js';
-import { CHANGELOG } from '../changelog.js';
+import { notesFor } from '../changelog.js';
 import { esc, fmtPct, dateParts, avg, plural, todayISO, tapGuard, fmtMonth } from '../util.js';
 
 const RECENT_GAMES = GOAL_WINDOW; // the hero average and goals look at the same games
@@ -78,7 +79,9 @@ export function render(root) {
   const offerGoals = !goals && all.games.length >= GOAL_MIN_GAMES;
   const prog = progress(db.sessions);
   const change = prog && Math.round(prog.last.average) - Math.round(prog.first.average);
-  const whatsNew = db.settings.seenVersion !== APP_VERSION && CHANGELOG.find((r) => r.version === APP_VERSION);
+  // Notes newer than the version last seen, even when this update itself had none.
+  const notes = notesFor(APP_VERSION);
+  const whatsNew = db.settings.seenVersion !== APP_VERSION && notes && notes.version > (db.settings.seenVersion ?? '') && notes;
   // Same center, ball and oil as last time: start in one tap, with the form one link away.
   const last = db.settings.last ?? {};
   const again = !cur && last.center;

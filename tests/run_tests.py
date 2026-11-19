@@ -1,7 +1,8 @@
 """Run the scoring tests and the end-to-end test in headless Microsoft Edge.
 
 Usage (from the project folder):
-    python tests/run_tests.py
+    python tests/run_tests.py          the tests
+    python tests/run_tests.py --perf   how fast each screen opens with 500 made-up games
 
 You can also serve the folder (python -m http.server) and open tests/test.html or
 tests/e2e.html in a browser; e2e.html?stop=<step> freezes the app at a step to look at it.
@@ -45,10 +46,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
     def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
         if self.path == "/__results":
-            length = int(self.headers.get("Content-Length", 0))
-            RESULTS["text"] = self.rfile.read(length).decode("utf-8")
+            RESULTS["text"] = body
             RESULT_READY.set()
+        elif self.path == "/__progress":
+            # The last check a page reached, to say where a run that never finishes stopped.
+            RESULTS["last"] = body
         self.send_response(204)
         self.end_headers()
 
@@ -59,13 +64,13 @@ def start_server():
     return server
 
 
-def run_browser(browser, url):
+def run_browser(browser, url, real_time=False):
     RESULTS.clear()
     RESULT_READY.clear()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as profile:
         cmd = [browser, "--headless=new", "--disable-gpu", "--no-first-run",
                f"--user-data-dir={profile}", "--window-size=1100,915",
-               "--virtual-time-budget=120000", url]
+               *([] if real_time else ["--virtual-time-budget=120000"]), url]
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         try:
             RESULT_READY.wait(timeout=90)
@@ -73,6 +78,8 @@ def run_browser(browser, url):
             if proc.poll() is None:
                 proc.kill()
                 proc.wait()
+    if "text" not in RESULTS and "last" in RESULTS:
+        return f"(no result received; the last check was: {RESULTS['last']})\nFAIL the run did not finish"
     return RESULTS.get("text")
 
 
@@ -83,6 +90,10 @@ def main():
     base = f"http://127.0.0.1:{server.server_address[1]}"
     failed = False
     try:
+        if "--perf" in sys.argv[1:]:
+            # Real time, so the timings are real; slow screens are reported, not failed.
+            print(run_browser(browser, f"{base}/tests/perf.html", real_time=True) or "(no result received)")
+            return
         for page in ("test.html", "e2e.html"):
             body = run_browser(browser, f"{base}/tests/{page}")
             print(f"== {page} ==\n{body or '(no result received)'}\n")

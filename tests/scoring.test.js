@@ -1,10 +1,15 @@
-import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone } from '../js/scoring.js';
-import { normalizeDB } from '../js/normalize.js';
+import { scoreGame, nextShot, gameDone, marks, isSplit, frameDone, repairFrame } from '../js/scoring.js';
+import { normalizeDB, compactJSON } from '../js/normalize.js';
 import {
-  computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, goalStatus, goalsCrossed, goalText, tips,
-  scoreWithSpares, sessionMoves, spareAimFor, monthlyStats, lifetimeTotals, scoreSpread, finishedGames,
-  sparePinsLost, scoreSwing, rollingAverage, strikeChains, leagueStanding, LEAGUE_DEFAULTS,
+  computeStats, progress, personalBests, sessionAverages, seriesScores, seriesOf, scoreWithSpares,
+  sessionMoves, spareAimFor, monthlyStats, lifetimeTotals, scoreSpread, finishedGames, sparePinsLost,
+  scoreSwing, rollingAverage, strikeChains, frameMap, frameTrend, dataChanged, stopCaching,
 } from '../js/stats.js';
+import { leagueStanding, LEAGUE_DEFAULTS } from '../js/league.js';
+import { goalStatus, goalsCrossed, goalText } from '../js/goals.js';
+import { tips } from '../js/tips.js';
+import { notesFor } from '../js/changelog.js';
+import { gameSummaryLine } from '../js/share.js';
 import { milestones, milestonesForGame, nextMilestones, milestoneProgress } from '../js/milestones.js';
 import { carryNote } from '../js/terms.js';
 import { spareAim, keyPin, adjustAim, aimText } from '../js/spares.js';
@@ -638,6 +643,100 @@ test('league settings and league nights load with safe defaults', () => {
   });
   eq([odd.sessions[0].league, odd.settings.league, odd.settings.last.league],
     [false, { on: true, base: 220, pct: 90, seasonStart: null, average: 168 }, true]);
+});
+
+test('"What\'s new" shows the newest notes up to the installed version', () => {
+  const newest = notesFor('v99991231-2359').version;
+  eq(notesFor(newest).version, newest);
+  // A fix published without notes shows the release before it, never a 'next' entry.
+  eq(notesFor(newest.replace(/\d{4}$/, '9999')).version, newest);
+  eq(notesFor('v20000101-0000'), null);
+});
+
+test('a fixed ball keeps the rest of its frame when it can', () => {
+  const b = (...standing) => ({ standing });
+  const lengths = (f, shots) => { const r = repairFrame(f, shots); return [r.shots.length, r.dropped, frameDone(f, r.shots)]; };
+  eq(lengths(0, [b(10)]), [1, 0, false]); // a strike made a 9: it needs its 2nd ball
+  eq(lengths(0, [b(), b()]), [1, 1, true]); // a 9 made a strike: the 2nd ball goes
+  eq(lengths(0, [b(7, 10), b(10)]), [2, 0, true]); // unchanged
+  eq(lengths(0, [b(4, 7), b(10)]), [1, 1, false]); // the 2nd ball no longer fits: enter it again
+  eq(lengths(9, [b(5), b(), b()]), [3, 0, true]); // 10th: X X X made 9 / X keeps all three
+  eq(lengths(9, [b(5), b(5), b()]), [2, 1, true]); // 10th: the spare became an open frame, no bonus ball
+  eq(lengths(9, [b(1, 2), b()]), [2, 0, false]); // 10th: an open frame made a spare needs its bonus ball
+});
+
+test('frame by frame counts strikes and open frames in each frame', () => {
+  // A strike in frame 1, a spare in frame 2, an open frame 3, then 9-pin frames and a 10th of three strikes.
+  const frames = game([10, 9, 1, 5, 3, ...Array(6).fill([9, 0]).flat(), 10, 10, 10]);
+  const rows = frameMap(computeStats([{ id: 'f', date: '2026-09-01', games: [{ id: 'f1', frames, done: true, score: scoreGame(frames).total }] }]));
+  eq(rows.length, 10);
+  eq([rows[0].strikes, rows[0].opens], [1, 0]);
+  eq([rows[1].strikes, rows[1].opens], [0, 0]);
+  eq([rows[2].strikes, rows[2].opens], [0, 1]);
+  eq([rows[9].strikes, rows[9].opens, rows[9].n], [1, 0, 1]);
+  eq(frameTrend(rows), null); // one game says nothing yet
+  // 20 games that strike in frames 1-3 and leave the rest open: a fade, frames 1-3 better.
+  const row = (frame, strikes, opens, n = 20) => ({ frame, n, strikes, opens });
+  const fade = frameTrend([1, 2, 3].map((f) => row(f, 12, 2)).concat([4, 5, 6, 7, 8, 9, 10].map((f) => row(f, 2, 8))));
+  eq([fade.trend, fade.early, fade.late], ['fade', 60, 10]);
+  eq([fade.strikes[0], fade.strikes[9], fade.opens[0], fade.opens[9]], ['better', 'worse', 'better', null]);
+  // The same games the other way round start slow; an even spread has no trend and no colors.
+  eq(frameTrend([1, 2, 3].map((f) => row(f, 2, 6)).concat([4, 5, 6, 7, 8, 9, 10].map((f) => row(f, 8, 2)))).trend, 'slow');
+  const even = frameTrend([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((f) => row(f, 6, 5)));
+  eq([even.trend, even.strikes.some(Boolean), even.opens.some(Boolean)], [null, false, false]);
+  eq(frameTrend([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((f) => row(f, 6, 5, 19))), null);
+});
+
+test('the shared picture says only what applies', () => {
+  const stOf = (rolls) => {
+    const frames = game(rolls);
+    return { st: computeStats([{ id: 'p', date: '2026-09-01', games: [{ id: 'p1', frames, done: true, score: scoreGame(frames).total }] }]), score: scoreGame(frames).total };
+  };
+  const perfect = stOf(Array(12).fill(10));
+  eq(gameSummaryLine(perfect.st, perfect.score), 'Perfect game!');
+  // Strikes and spares, no open frame: no "0 open frames".
+  const clean = stOf([10, 9, 1, ...Array(10).fill(10)]);
+  eq(gameSummaryLine(clean.st, clean.score), '11 strikes · 1 of 1 spares · clean game');
+  // 11 strikes and a 9 in the 10th: no spare chance, so nothing about spares.
+  const nine = stOf([...Array(11).fill(10), 9]);
+  eq(gameSummaryLine(nine.st, nine.score), '11 strikes · clean game');
+  const open = stOf([10, 9, 0, 5, 5, ...Array(14).fill(4)]);
+  eq(gameSummaryLine(open.st, open.score), '1 strike · 1 of 9 spares · 8 open frames');
+});
+
+// Once the app's storage has started, stats are kept until the next save.
+test('stats are kept until the data changes', () => {
+  const sessions = [{ id: 'c', date: '2026-09-01', games: [{ id: 'c1', frames: game(Array(12).fill(10)), done: true, score: 300 }] }];
+  const before = computeStats(sessions);
+  eq(computeStats(sessions) === before, false); // nothing is kept before storage starts
+  dataChanged();
+  const kept = computeStats(sessions);
+  eq(computeStats(sessions) === kept, true);
+  eq(computeStats([{ ...sessions[0] }]) === kept, true); // the same games, in a new list
+  sessions[0].games[0].score = 290; // a ball changed: the games are not the same any more
+  eq(computeStats(sessions) === kept, false);
+  const now = computeStats(sessions);
+  dataChanged();
+  eq(computeStats(sessions) === now, false);
+  stopCaching(); // so the tests after this one work everything out as before
+  eq(computeStats(sessions) === computeStats(sessions), false);
+});
+
+test('saved data leaves out empty ball details and reads back the same', () => {
+  const pinsOnly = game([7, 3, 10, 9, 0, ...Array(14).fill(4)]);
+  const db = normalizeDB({
+    settings: { goals: [{ key: 'spares', target: 60 }] },
+    sessions: [{ id: 's1', date: '2026-09-01', center: 'Lanes', notes: '', games: [
+      { id: 'g1', frames: pinsOnly },
+      { id: 'g2', frames: game(Array(12).fill(10)).map((f) => f.map((x) => ({ ...x, feet: 20, target: 10, tags: ['Rushed'], note: 'ok' }))) },
+    ] }],
+    practice: [{ id: 'p1', date: '2026-09-01', leave: [10], made: false, miss: null, feet: null, target: null }],
+  });
+  const small = compactJSON(db);
+  eq(normalizeDB(JSON.parse(small)), db);
+  eq(small.length < JSON.stringify(db).length * 0.7, true);
+  // Only a ball's details are left out: an empty session note and a practice try's null feet stay.
+  eq(small.includes('"notes":""') && small.includes('"miss":null') && small.includes('"feet":20') && small.includes('"note":"ok"'), true);
 });
 
 const failed = results.filter((r) => !r.ok);

@@ -160,6 +160,7 @@ h3 { font-size: 1rem; margin: 0 0 6px; letter-spacing: -0.005em; }
   border-radius: 12px; color: inherit;
 }
 .tb-action { margin: 0 0 0 auto; background: rgba(255, 255, 255, 0.08); }
+button.tb-action { border: 0; padding: 0; font: inherit; cursor: pointer; }
 .tb-back:active, .tb-action:active { background: rgba(255, 255, 255, 0.12); }
 .tb-title { flex: 1; min-width: 0; }
 .t1 { font-weight: 700; font-size: 1.08rem; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -532,6 +533,12 @@ button.box { cursor: pointer; }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
 #progress .tbl th { white-space: nowrap; }
+.tbl.frames th, .tbl.frames td { padding-left: 1px; padding-right: 1px; white-space: nowrap; }
+/* Ten frames fit a 360px phone even when every cell reads 100. */
+.tbl.frames th.num, .tbl.frames td.num { text-align: center; font-size: 0.8rem; letter-spacing: -0.02em; }
+.tbl.frames td:first-child { padding-right: 4px; font-size: 0.76rem; }
+.tbl.frames td.better { color: var(--good); font-weight: 700; }
+.tbl.frames td.worse { color: var(--bad); font-weight: 700; }
 .table-view summary { color: var(--link); font-size: 0.86rem; font-weight: 650; cursor: pointer; padding: 6px 0; }
 .leaves { list-style: none; margin: 0; padding: 0; }
 .leaves > li { padding: 9px 0; border-top: 1px solid var(--line); }

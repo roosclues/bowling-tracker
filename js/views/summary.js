@@ -5,15 +5,19 @@
 import { db, save, findSession, findGame, newGame, unstampGoals } from '../storage.js';
 import { marks, isFreshRack, isSplit, ALL_PINS } from '../scoring.js';
 import { scoreboardHTML } from '../scoreboard.js';
-import { computeStats, finishedGames, tips, goalText, seriesOf, scoreWithSpares, spareAimFor, leagueStanding } from '../stats.js';
+import { computeStats, finishedGames, seriesOf, scoreWithSpares, spareAimFor } from '../stats.js';
+import { leagueStanding } from '../league.js';
+import { goalText } from '../goals.js';
+import { tips } from '../tips.js';
 import { hitLabel } from '../terms.js';
 import { miniPins } from '../pins.js';
-import { esc, fmtPct, go, avg, plural, fmtSpeed } from '../util.js';
+import { esc, fmtPct, go, avg, plural, fmtSpeed, toast, tapGuard } from '../util.js';
 import { topbar, icon, tipsHTML } from '../ui.js';
 import { reopenLastBall, ballsWithoutLine } from './game.js';
 import { showLanes, laneNoteRow } from './lanes.js';
 import { showStatsTab } from './stats.js';
 import { milestones, milestonesForGame } from '../milestones.js';
+import { shareGame, gameSummaryLine } from '../share.js';
 
 // "Milestone: First 200 game · First turkey"; past 3, the first 2 and "+N more".
 function milestonePill(list) {
@@ -24,6 +28,7 @@ function milestonePill(list) {
 
 // Earlier games needed before "vs your average" means anything.
 const MIN_FOR_AVERAGE = 3;
+const shareOnce = tapGuard(1500); // drawing the picture takes a moment; one share sheet per tap
 
 function shotRow(shots, i, m, f) {
   const s = shots[i];
@@ -86,7 +91,10 @@ export function render(root, sid, gid) {
   const handicap = session.league && db.settings.league.on ? leagueStanding(db.sessions, db.settings.league, session).handicap : null;
 
   root.innerHTML = `
-    ${topbar({ back: `#/session/${sid}`, title: `Game ${gameNo} summary`, sub: esc(session.center || '') })}
+    ${topbar({
+      back: `#/session/${sid}`, title: `Game ${gameNo} summary`, sub: esc(session.center || ''),
+      right: `<button type="button" class="tb-action" data-act="share" id="shareGame" aria-label="Share this game">${icon('share', 20)}</button>`,
+    })}
     <div class="page">
       <section class="hero final">
         <div class="hero-label">Final score</div>
@@ -149,6 +157,8 @@ export function render(root, sid, gid) {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'review') {
       go(`#/review/${sid}/${gid}`, { replace: true });
+    } else if (act === 'share' && shareOnce()) {
+      shareGame(session, game, { gameNo, summary: gameSummaryLine(st, game.score), handicap }).catch((err) => toast(`Could not share the game: ${err.message}`));
     } else if (act === 'milestones') {
       showStatsTab('lifetime', '#milestones');
     } else if (act === 'move') {

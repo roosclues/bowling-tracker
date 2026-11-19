@@ -41,6 +41,21 @@ export function frameDone(frameIndex, shots) {
   return !earnedBonus;
 }
 
+// A frame's balls after one of them was changed: each later ball stays while the frame still
+// needs it and its pins still fit (a 9 can't follow a ball that left only the 10 pin); the
+// rest are dropped. A strike made a 9 then needs its 2nd ball (frameDone says so); a 9 made a
+// strike loses its 2nd ball. Returns { shots, dropped }.
+export function repairFrame(frameIndex, shots) {
+  const kept = [];
+  for (const [i, shot] of shots.entries()) {
+    if (i > 0 && frameDone(frameIndex, kept)) break;
+    const allowed = new Set(pinsBefore(kept, i));
+    if (!shot.standing.every((p) => allowed.has(p))) break;
+    kept.push(shot);
+  }
+  return { shots: kept, dropped: shots.length - kept.length };
+}
+
 // Where the next shot goes: { frame, shot } (0-based), or null when the game is over.
 export function nextShot(frames) {
   for (let f = 0; f < 10; f++) {

@@ -1,7 +1,7 @@
 // "What's new": the history of published updates, newest first.
 
 import { db, save } from '../storage.js';
-import { CHANGELOG } from '../changelog.js';
+import { CHANGELOG, notesFor } from '../changelog.js';
 import { APP_VERSION, versionDate } from '../version.js';
 import { topbar } from '../ui.js';
 import { esc } from '../util.js';
@@ -13,12 +13,13 @@ export function render(root) {
     save();
   }
 
+  const installed = notesFor(APP_VERSION);
   root.innerHTML = `
     ${topbar({ back: '#/settings', title: "What's new", sub: `You have ${esc(APP_VERSION)}` })}
     <div class="page">
       <ol class="changelog">
         ${CHANGELOG.map((r) => {
-          const current = r.version === APP_VERSION;
+          const current = r === installed;
           return `
             <li class="release${current ? ' current' : ''}">
               <div class="rel-head">

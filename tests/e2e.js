@@ -2,9 +2,11 @@
 // Open tests/e2e.html (served over http). Add ?stop=<step> to freeze the app at a step for screenshots:
 // welcome, form, summary300, pins, spareaim, game, summary, lanes, session, movegame, home, stats, statsfirst, statsspares, practicemiss, help,
 // lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, monthly, lifetime, practice, goals, goalreached, minsettings, minhome,
-// minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame, sparescost, rolling, chains, leaguesettings, leaguesummary.
+// minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame, sparescost, rolling, chains, framemap, leaguesettings, leaguesummary, share, fixpins.
 // Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "lifetime" step (a later restore resets it).
 // Add &size=360x780 for a smaller phone (the default is 412x915).
+
+import { normalizeDB } from '../js/normalize.js';
 
 const PARAMS = new URLSearchParams(location.search);
 const STOP = PARAMS.get('stop');
@@ -36,6 +38,8 @@ function report() {
 function check(name, cond, detail = '') {
   log.push(`${cond ? 'PASS' : 'FAIL'} ${name}${cond ? '' : ' :: ' + detail}`);
   report();
+  // tests/run_tests.py shows the last check when the run never finishes.
+  if (!STOP) fetch('/__progress', { method: 'POST', body: log.at(-1) }).catch(() => {});
 }
 function stopAt(step) {
   if (STOP !== step) return;
@@ -57,8 +61,9 @@ async function nav(hash) {
   W.location.hash = hash;
   await sleep(80);
 }
+// The saved data as the app reads it: normalizeDB fills in the ball details left out when saving.
 function db() {
-  return JSON.parse(localStorage.getItem('bowltrack.v1'));
+  return normalizeDB(JSON.parse(localStorage.getItem('bowltrack.v1')));
 }
 
 const ZONE_Y = { feet: 222, target: 128, breakpoint: 40 };
@@ -218,6 +223,10 @@ async function run() {
   await click('[data-act="allup"]');
   check('all-up gives 0 pins', text('#saveBtn') === 'Save · 0 pins', text('#saveBtn'));
   check('All still up shows the Missed row', !$('#missRow').hidden);
+  check('with pins up, the link offers Clear', text('#allUp') === 'Clear', text('#allUp'));
+  await click('#allUp');
+  check('Clear knocks them all down again', text('#allUp') === 'All still up' && text('#saveBtn') === 'Save · Spare! /' && $('#missRow').hidden, `${text('#allUp')} | ${text('#saveBtn')}`);
+  await click('#allUp');
   await click('#missRow [aria-label="Missed left"]');
   await click('#saveBtn');
   check('the direction is saved with the ball', JSON.stringify(db().sessions[0].games[1].frames[1][1].tags) === '["Missed left"]', JSON.stringify(db().sessions[0].games[1].frames[1][1].tags));
@@ -295,6 +304,43 @@ async function run() {
   await sleep(100);
   check('game finished again at 225', text('.final-score') === '225', text('.final-score'));
 
+  // ---- Fix a ball's pins after the game, even when it changes the frame ----
+  {
+    const g1 = () => db().sessions[0].games[0];
+    const ask = W.confirm;
+    let asked = '';
+    W.confirm = (m) => { asked = m; return true; };
+    try {
+      // The first strike was really a 9: the frame then needs its 2nd ball, asked for right away.
+      await nav(`#/edit/${sid}/${gid1}/0/0`);
+      check('editing a finished game says the score follows the fix', text('#pins + .hint, .card .hint.center').startsWith('Fix the pins if they'), text('.card .hint.center'));
+      await tapPins([10]);
+      await click('[data-act="saveEdit"]');
+      check('a strike made a 9 asks for the frame\'s 2nd ball, and saves nothing yet', text('.shot-head h2') === 'Editing · Frame 1 · Ball 2'
+        && text('#fixInfo').startsWith('With that change, frame 1 needs ball 2') && g1().score === 300 && g1().frames[0].length === 1, `${text('.shot-head h2')} | ${g1().score}`);
+      check('only the 10 pin is left to pick up', D.querySelectorAll('#pins .pin:not(.gone)').length === 1 && !!$('#pins .pin[data-pin="10"]:not(.gone)'));
+      stopAt('fixpins');
+      await click('[data-act="cancel"]');
+      check('Cancel keeps the game as it was', W.location.hash === `#/summary/${sid}/${gid1}` && g1().score === 300 && g1().frames[0].length === 1, `${W.location.hash} ${g1().score}`);
+      await nav(`#/edit/${sid}/${gid1}/0/0`);
+      await tapPins([10]);
+      await click('[data-act="saveEdit"]');
+      await click('[data-act="saveEdit"]'); // the spare: nothing tapped
+      check('the spare finishes the fix, after asking: 300 becomes 290', g1().score === 290 && g1().frames[0].length === 2 && g1().done
+        && asked.includes('from 300 to 290') && W.location.hash === `#/summary/${sid}/${gid1}`, `${g1().score} | ${asked}`);
+      check('the other frames are untouched', g1().frames.slice(1).every((f, i) => f.length === (i === 8 ? 3 : 1) && f.every((x) => !x.standing.length)));
+      // And back: the 9 was a strike after all, so the 2nd ball goes.
+      asked = '';
+      await nav(`#/edit/${sid}/${gid1}/0/0`);
+      await tapPins([10]);
+      await click('[data-act="saveEdit"]');
+      check('a 9 made a strike drops the 2nd ball, after asking', g1().score === 300 && g1().frames[0].length === 1
+        && asked.includes('from 290 to 300') && asked.includes('Frame 1 keeps 1 ball instead of 2'), `${g1().score} | ${asked}`);
+    } finally {
+      W.confirm = ask;
+    }
+  }
+
   // ---- Session & home ----
   await nav(`#/session/${sid}`);
   check('session lists 2 games', D.querySelectorAll('.list li').length === 2);
@@ -322,6 +368,33 @@ async function run() {
   await nav(`#/session/${sid}`);
   check('the session shows the note', text('#laneRow').startsWith('Lane 7 · Avoid · Ball return'), text('#laneRow'));
   stopAt('session');
+
+  // ---- Share a game: a picture of the scorecard (a download here, the share sheet on a phone) ----
+  {
+    await nav(`#/summary/${sid}/${gid2}`);
+    let blob = null;
+    let name = '';
+    const make = W.URL.createObjectURL;
+    const tap = W.HTMLAnchorElement.prototype.click;
+    W.URL.createObjectURL = (b) => { blob = b; return 'blob:test'; };
+    W.HTMLAnchorElement.prototype.click = function () { name = this.download; };
+    // Edge on Windows can share files too, and its share sheet would wait for a pick: take the download path.
+    Object.defineProperty(W.navigator, 'canShare', { value: () => false, configurable: true });
+    try {
+      await click('#shareGame');
+      for (let i = 0; i < 40 && !blob; i++) await sleep(50);
+    } finally {
+      W.URL.createObjectURL = make;
+      W.HTMLAnchorElement.prototype.click = tap;
+      delete W.navigator.canShare;
+    }
+    // The size from the PNG header (decoding the picture would stall under the test's clock).
+    const head = blob ? new DataView(await blob.slice(0, 24).arrayBuffer()) : null;
+    const pic = head && { width: head.getUint32(16), height: head.getUint32(20) };
+    check('Share draws the game as a 1080 x 600 picture', blob?.type === 'image/png' && pic?.width === 1080 && pic?.height === 600, `${blob?.type} ${pic?.width}x${pic?.height}`);
+    check('the picture is named after the day, game and score', /^bowling-\d{4}-\d{2}-\d{2}-game-\d+-\d+\.png$/.test(name), name);
+  }
+  stopAt('share');
 
   // ---- Move a game to another date ----
   {
@@ -587,7 +660,10 @@ async function run() {
   await nav('#/changelog');
   check('update history lists releases', D.querySelectorAll('.release').length >= 3);
   stopAt('changelog');
-  check('installed version is marked in the history', text('.release.current .rel-meta').startsWith(swVersionNow()), text('.release.current .rel-meta'));
+  // The newest notes up to the installed version; a fix published without notes has none of its own.
+  const installedNotes = text('.release.current .rel-meta').split(' ')[0];
+  const newestUpToInstalled = [...D.querySelectorAll('.release .rel-meta')].map((m) => m.textContent.split(' ')[0]).find((v) => v.startsWith('v') && v <= swVersionNow());
+  check('the newest notes up to the installed version are marked', !!installedNotes && installedNotes === newestUpToInstalled, `${installedNotes} vs ${newestUpToInstalled}`);
   // Pretend the app was just updated from an older version: Home shows a one-time banner.
   const stored = db();
   stored.settings.seenVersion = 'v20000101-0000';
@@ -697,8 +773,12 @@ async function run() {
   check('Add details opens the first ball without a line', text('.shot-head h2') === 'Editing · Frame 2 · Ball 1' && text('#reviewInfo').includes('3 balls'), `${text('.shot-head h2')} | ${text('#reviewInfo')}`);
   check('Add details shows every detail, whatever you log', !!$('.lr-row[data-k="breakpoint"]') && !!$('#more'));
   check('it starts from the line of the ball before', laneVal('feet') === 'Board 5' && laneVal('target') === 'Board 10 · 2nd arrow' && text('#reviewInfo').includes('frame 1, ball 1'), `${laneVal('feet')} | ${text('#reviewInfo')}`);
-  await click('#pins .pin[data-pin="7"]');
-  check('pins are locked after the game', !$('#pins .pin[data-pin="7"]').classList.contains('up') && !$('[data-act="allup"]'));
+  {
+    const wasUp = $('#pins .pin[data-pin="7"]').classList.contains('up');
+    await click('#pins .pin[data-pin="7"]');
+    check('a finished game\'s pins can be fixed too', $('#pins .pin[data-pin="7"]').classList.contains('up') !== wasUp && !!$('#allUp'));
+    await click('#pins .pin[data-pin="7"]');
+  }
   stopAt('review');
   await click('[data-act="saveNext"]');
   check('Save moves on to the next ball', text('.shot-head h2') === 'Editing · Frame 3 · Ball 1' && text('#reviewInfo').includes('2 balls'), `${text('.shot-head h2')} | ${text('#reviewInfo')}`);
@@ -888,6 +968,36 @@ async function run() {
     check('First ball shows strike chains and the 10th frame', D.querySelectorAll('#chains .kv-row').length === 3
       && /^\d+%$/.test(text('#chains .kv-row:first-child .kv-val')) && /\d+ of \d+/.test(text('#chains .kv-side')), words($('#chains')));
     stopAt('chains');
+    {
+      // 18 games: every frame has a strike % and an open %, and the table fits a phone.
+      const cells = [...D.querySelectorAll('#frameMap tbody td.num')].map((td) => td.textContent);
+      check('First ball shows frame by frame: strike % and open % for frames 1-10', D.querySelectorAll('#frameMap thead th.num').length === 10
+        && cells.length === 20 && cells.every((c) => /^\d+$/.test(c) && Number(c) <= 100), cells.join(' '));
+      const wrap = $('#frameMap .tbl-wrap');
+      check('the frame table fits without scrolling sideways', wrap.scrollWidth <= wrap.clientWidth + 1, `${wrap.scrollWidth} > ${wrap.clientWidth}`);
+      check('it sits right after strikes in a row', $('#chains').nextElementSibling === $('#frameMap'));
+      check('with 18 games it colors nothing yet and says when it will', !$('#frameMap td.better, #frameMap td.worse') && !$('#frameNote')
+        && text('#frameMap').includes('After 20 games'), words($('#frameMap')));
+    }
+    stopAt('framemap');
+    {
+      // With few games a frame can read 100: five perfect games, every strike cell "100", on a 360px phone.
+      const snapshot = localStorage.getItem('bowltrack.v1');
+      const perfect = (i) => ({ id: `fm${i}`, frames: [...Array.from({ length: 9 }, () => [{ standing: [] }]), [{ standing: [] }, { standing: [] }, { standing: [] }]] });
+      storage.restoreBackup(JSON.stringify({ settings: { seenVersion: SW_VERSION }, sessions: [{ id: 'fm', date: '2026-10-01', center: 'Test Lanes', games: [0, 1, 2, 3, 4].map(perfect) }] }));
+      const width = frame.style.width;
+      frame.style.width = '360px';
+      await nav('#/');
+      await nav('#/stats');
+      await click('[data-subtab="first"]');
+      const wrap = $('#frameMap .tbl-wrap');
+      const hundreds = [...D.querySelectorAll('#frameMap tbody td.num')].filter((td) => td.textContent === '100').length;
+      check('a row of 100s still fits a 360px phone', hundreds === 10 && wrap.scrollWidth <= wrap.clientWidth + 1, `${hundreds} × 100, ${wrap?.scrollWidth} > ${wrap?.clientWidth}`);
+      frame.style.width = width;
+      storage.restoreBackup(snapshot);
+      await nav('#/');
+      await nav('#/stats');
+    }
     await click('[data-subtab="overview"]');
   }
 

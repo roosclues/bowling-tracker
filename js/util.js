@@ -16,18 +16,25 @@ export function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+// toLocaleDateString sets up a new formatter on every call, which is slow over hundreds of
+// rows (a table of 500 games took a tenth of a second), so each format is set up once.
+const formatters = new Map();
+export function formatDate(date, opts) {
+  const key = JSON.stringify(opts);
+  if (!formatters.has(key)) formatters.set(key, new Intl.DateTimeFormat(undefined, opts));
+  return formatters.get(key).format(date);
+}
+
 export function fmtDate(iso) {
   if (!iso) return '';
   const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
-    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-  });
+  return formatDate(new Date(y, m - 1, d), { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 // 'Oct 29', plus the year when it isn't this year.
 export function fmtShortDate(iso) {
   const [y, m, d] = iso.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+  return formatDate(new Date(y, m - 1, d), {
     month: 'short', day: 'numeric', ...(y === new Date().getFullYear() ? {} : { year: 'numeric' }),
   });
 }
@@ -38,7 +45,7 @@ export function fmtMonth(key, style = 'long') {
   const opts = style === 'short'
     ? { month: 'short', ...(y === new Date().getFullYear() ? {} : { year: 'numeric' }) }
     : { month: 'long', year: 'numeric' };
-  return new Date(y, m - 1, 1).toLocaleDateString(undefined, opts);
+  return formatDate(new Date(y, m - 1, 1), opts);
 }
 
 // { day: '28', month: 'Oct', weekday: 'Tue' } for date badges.
@@ -47,8 +54,8 @@ export function dateParts(iso) {
   const date = new Date(y, m - 1, d);
   return {
     day: String(d),
-    month: date.toLocaleDateString(undefined, { month: 'short' }),
-    weekday: date.toLocaleDateString(undefined, { weekday: 'short' }),
+    month: formatDate(date, { month: 'short' }),
+    weekday: formatDate(date, { weekday: 'short' }),
   };
 }
 

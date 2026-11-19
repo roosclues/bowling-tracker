@@ -2,7 +2,26 @@
 // Add an entry with version: 'next' at the top for each update; tools/bump_version.py
 // stamps it with the real version number when publishing.
 
+// The notes for the installed version: the newest entry published up to it. A fix published
+// without notes (bump_version.py --no-changelog) has none of its own, so it shows the one before.
+// Versions are 'vYYYYMMDD-HHMM', so they compare as text.
+export function notesFor(version) {
+  return CHANGELOG.find((r) => r.version !== 'next' && r.version <= version) ?? null;
+}
+
 export const CHANGELOG = [
+  {
+    version: 'v20261120-0731',
+    title: 'Share a game, frame by frame, and a faster Stats',
+    items: [
+      'Fix any ball\'s pins, during or after the game: tap the ball on the scoreboard. If a strike was really a 9, the app asks for the frame\'s 2nd ball; if a 9 was really a strike, the extra ball goes. No more undoing back to that ball. After the game it shows the new score before saving.',
+      'Next to the pins, "All still up" turns into "Clear" once you tap a pin, to put every pin back down in one tap.',
+      'Share a game: tap the share button at the top of a game\'s summary to send a picture of the scorecard (your score, every frame, strikes and spares, and your handicap on league nights) to friends or your team.',
+      'Stats → First ball → Frame by frame: your strike % and open frames in each frame, 1 to 10. After 20 games it marks the frames where you do best and worst, and tells you if you start slow or fade late in the game.',
+      'Home and Stats open much faster once you have hundreds of games.',
+      'After an update, Home now always points you to the latest "What\'s new", even when you skipped an update.',
+    ],
+  },
   {
     version: 'v20261119-0612',
     title: 'League handicap, more spare stats, and calmer Stats',

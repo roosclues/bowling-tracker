@@ -1,7 +1,7 @@
 // Minimal SVG/HTML charts: a single-series line with tap/hover readout, horizontal bars, and a
 // calendar of days bowled.
 
-import { esc } from './util.js';
+import { esc, formatDate } from './util.js';
 
 function niceTicks(min, max, count = 4) {
   const span = Math.max(1, max - min);
@@ -146,7 +146,7 @@ export function calendarHeat(days, { weeks = 26, today = new Date() } = {}) {
       if (d > today) break;
       // Name each month in the week it starts; the first column too, unless a new month is close.
       if (d.getDate() === 1 || (w === 0 && r === 0 && d.getDate() <= 14)) {
-        months += `<text class="c-tick" x="${left + w * step}" y="10">${d.toLocaleDateString(undefined, { month: 'short' })}</text>`;
+        months += `<text class="c-tick" x="${left + w * step}" y="10">${formatDate(d, { month: 'short' })}</text>`;
       }
       const x = left + w * step;
       const y = top + r * step;

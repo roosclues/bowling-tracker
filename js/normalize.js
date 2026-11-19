@@ -3,7 +3,8 @@
 // recomputed here instead of reaching the UI. Scores and "done" are always recomputed.
 
 import { frameDone, pinsBefore, scoreGame, gameDone, ALL_PINS } from './scoring.js';
-import { GOAL_TYPES, LEAGUE_DEFAULTS } from './stats.js';
+import { LEAGUE_DEFAULTS } from './league.js';
+import { GOAL_TYPES } from './goals.js';
 import { HITS, LOG_LEVELS, LANE_TAGS } from './terms.js';
 import { laneKey } from './lanenotes.js';
 import { uid, todayISO } from './util.js';
@@ -151,6 +152,18 @@ function normLeague(raw) {
     seasonStart: date(r.seasonStart),
     average: int(r.average, 0, 300),
   };
+}
+
+// The database as JSON, without a ball's empty details (no feet, no tags, no note...): about 60%
+// smaller, which keeps years of games well inside the browser's storage limit. normalizeDB
+// fills them back in when the data is read.
+const SHOT_DETAILS = new Set(['feet', 'target', 'breakpoint', 'hit', 'speed', 'tags', 'note']);
+function leaveOutEmpty(key, value) {
+  const empty = value === null || value === '' || (Array.isArray(value) && value.length === 0);
+  return empty && SHOT_DETAILS.has(key) && Array.isArray(this.standing) ? undefined : value;
+}
+export function compactJSON(data, space) {
+  return JSON.stringify(data, leaveOutEmpty, space);
 }
 
 // Throws if `data` isn't a Bowling Tracker database at all; otherwise returns a clean copy.

@@ -4,9 +4,9 @@
 // (views/coach.js) shows what these return. A message is a list of tips()-shaped items:
 // { title, text, basis?, link? }.
 
-import {
-  computeStats, recentStats, tips, strikeLine, spareAimFor, progress, goalStatus, goalText, speedBands, collectShots, bestCombo,
-} from './stats.js';
+import { computeStats, strikeLine, spareAimFor, progress, speedBands, collectShots } from './stats.js';
+import { recentStats, goalStatus, goalText } from './goals.js';
+import { tips, bestCombo } from './tips.js';
 import { frameDone } from './scoring.js';
 import { MIRROR, DEFAULT_LINE } from './spares.js';
 import { TAG, carryNote } from './terms.js';

@@ -1,7 +1,7 @@
 // Goals: pick targets for a few stats and see how your last games measure up.
 
 import { db, save } from '../storage.js';
-import { GOAL_TYPES, GOAL_WINDOW, GOAL_MIN_GAMES, goalStatus, goalText, recentStats } from '../stats.js';
+import { GOAL_TYPES, GOAL_WINDOW, GOAL_MIN_GAMES, goalStatus, goalText, recentStats } from '../goals.js';
 import { topbar } from '../ui.js';
 import { fmtShortDate } from '../util.js';
 

@@ -7,7 +7,7 @@ import { infoButton, logLabel } from '../terms.js';
 import { topbar, icon, logChips } from '../ui.js';
 import { APP_VERSION, versionDate } from '../version.js';
 import { fmtDate, toast, go, plural, SPEED_UNITS, esc } from '../util.js';
-import { leagueStanding, LEAGUE_MIN_GAMES, LEAGUE_ESTABLISH } from '../stats.js';
+import { leagueStanding, LEAGUE_MIN_GAMES, LEAGUE_ESTABLISH } from '../league.js';
 
 const LEAGUE_PCTS = [80, 90, 100];
 

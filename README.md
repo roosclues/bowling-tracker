@@ -22,6 +22,8 @@ python tests/run_tests.py
 
 This runs the scoring tests (`tests/test.html`) and an end-to-end run of the app in a phone-sized frame (`tests/e2e.html`) using headless Edge. Both pages also work in a normal browser while the server is running. To freeze the app at a step and look at it, use `tests/e2e.html?stop=game` (the full list of steps is at the top of `tests/e2e.js`, e.g. `spareaim`, `summary`, `session`, `stats`, `statsfirst`, `statsspares`, `practice`, `goals`, `goalreached`). Add `&skin=minimal` to see the Minimal theme.
 
+`python tests/run_tests.py --perf` times each screen with 500 made-up games (`tests/perf.html`) and marks the slow ones. A mid-range phone is about 4 times slower than a PC.
+
 ## Put it on your phone
 
 Installing a PWA requires HTTPS, so the folder has to be hosted. Both of these options are free:
@@ -54,7 +56,9 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 | `js/scoring.js` | Bowling score rules, split detection |
 | `js/storage.js` | Saving, backup/restore, CSV export, sync between open copies |
 | `js/normalize.js` | Checks and repairs saved or restored data |
-| `js/stats.js` | Stat calculations, progress (first vs latest games), months, lifetime totals, score spread, personal bests, goals, coaching tips |
+| `js/stats.js` | Stat calculations (kept until the next save), progress (first vs latest games), months, lifetime totals, score spread, frame by frame, personal bests |
+| `js/goals.js`, `js/tips.js`, `js/league.js` | Goals, coaching tips, and the league book average and handicap |
+| `js/share.js` | Draws a finished game as a picture to share |
 | `js/milestones.js` | Milestones (first 200 game, 100 games bowled…) and the game where each was reached |
 | `js/spares.js` | Spare aiming (3-6-9 system) from the bowler's strike line, adjusted by their own tries |
 | `js/coach.js` | The coach: before/during/after messages, reading a leave as a light or high hit, and answers to the questions you can tap |
@@ -65,7 +69,7 @@ On the Samsung phone, open the link in Chrome or Samsung Internet, then use the 
 | `js/scoreboard.js`, `js/charts.js` | Scoreboard and charts |
 | `js/terms.js` | Labels and the beginner glossary |
 | `js/ui.js`, `js/device.js` | Icons and top bar; keep-screen-on, vibration, strike flash |
-| `js/views/` | One file per screen |
+| `js/views/` | One file per screen; `js/views/stats/` has one file per Stats tab |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and install info |
 | `tools/bump_version.py` | Run before each publish (see Updates) |
 | `tools/make_icons.py` | Regenerates the icons |

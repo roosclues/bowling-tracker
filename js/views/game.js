@@ -5,11 +5,12 @@
 // spare can say which way it went. A line carried over from the last ball shows as one row,
 // with buttons to move feet or arrow a board, until you tap Change.
 // After the game, the summary opens balls here to add details (#/edit/…), one at a time or
-// stepping through every ball without feet or arrow (#/review/…). The pins are locked then,
-// so the score can't change.
+// stepping through every ball without feet or arrow (#/review/…). Any ball's pins can be fixed,
+// during or after the game: a fix that changes the frame (a strike that was really a 9) asks
+// for the balls the frame now needs, and is saved in one go once the frame is complete.
 
 import { db, save, findSession, findGame, refreshScore, stampReachedGoals, unstampGoals } from '../storage.js';
-import { nextShot, pinsBefore, isFreshRack, scoreGame, frameDone } from '../scoring.js';
+import { nextShot, pinsBefore, isFreshRack, scoreGame, frameDone, repairFrame } from '../scoring.js';
 import { strikeLineFor, spareAimFor } from '../stats.js';
 import { mountLane } from '../lane.js';
 import { mountPins } from '../pins.js';
@@ -26,6 +27,9 @@ let editing = null;   // { gid, frame, shot } when changing an earlier ball
 let moreOpen = false; // remember whether "More details" is expanded
 let undone = [];      // balls taken back with Undo, newest last: { key, shot }
 let reviewing = false; // stepping through the balls without a line, after the game
+// A pin fix that left its frame needing more balls: { gid, frame, shots, original }. Nothing is
+// saved until the frame is complete (saved data can't hold a half-done frame before later ones).
+let fixing = null;
 const once = tapGuard(); // ignore a second Save/Undo tap that lands right after the first
 
 const hasLine = (shot) => shot.feet != null && shot.target != null;
@@ -73,17 +77,6 @@ function lastLine(fresh, leave, exact = false) {
     }
   }
   return fallback;
-}
-
-// An earlier ball's pins can change only if the frame keeps the same number of balls
-// and every later ball in it is still possible.
-function keepsFrameShape(f, before, after) {
-  for (let j = 1; j < after.length; j++) {
-    if (frameDone(f, after.slice(0, j))) return false;
-    const allowed = new Set(pinsBefore(after, j));
-    if (!after[j].standing.every((p) => allowed.has(p))) return false;
-  }
-  return frameDone(f, after) === frameDone(f, before);
 }
 
 // `restored` marks a ball that was already saved once (taken back with Undo, or being
@@ -168,6 +161,7 @@ function moreHTML(d, fresh) {
 export function render(root, sid, gid) {
   editing = null;
   reviewing = false;
+  fixing = null;
   draw(root, sid, gid);
 }
 
@@ -176,6 +170,7 @@ export function renderEdit(root, sid, gid, frame, shot) {
   const exists = !!findGame(sid, gid)?.frames[frame]?.[shot];
   editing = exists ? { gid, frame: Number(frame), shot: Number(shot) } : null;
   reviewing = false;
+  fixing = null;
   draft = null;
   draw(root, sid, gid);
 }
@@ -191,6 +186,7 @@ export function renderReview(root, sid, gid) {
   }
   editing = { gid, ...first };
   reviewing = true;
+  fixing = null;
   draft = null;
   draw(root, sid, gid);
 }
@@ -209,14 +205,19 @@ function draw(root, sid, gid) {
     return;
   }
 
-  const target = editing ?? pos;
-  const shots = game.frames[target.frame];
+  const fix = fixing?.gid === gid ? fixing : null;
+  const target = fix ? { frame: fix.frame, shot: fix.shots.length } : editing ?? pos;
+  const shots = fix ? fix.shots : game.frames[target.frame];
   const available = pinsBefore(shots, target.shot);
   const fresh = isFreshRack(shots, target.shot);
-  const key = `${gid}:${target.frame}:${target.shot}:${editing ? 'edit' : 'new'}`;
+  const key = `${gid}:${target.frame}:${target.shot}:${fix ? 'fix' : editing ? 'edit' : 'new'}`;
   if (!draft || draft.key !== key) {
     const top = undone[undone.length - 1];
-    if (editing) {
+    if (fix) {
+      // A ball the fix needs: the line of the ball that was there before, the pins to tap.
+      const was = fix.original[target.shot];
+      draft = draftFrom(was ? { ...was, standing: [] } : null, key, true);
+    } else if (editing) {
       draft = draftFrom(shots[target.shot], key, true);
       const prev = reviewing && !hasLine(shots[target.shot]) ? earlierLine(game, target.frame, target.shot, fresh) : null;
       if (prev) {
@@ -271,12 +272,14 @@ function draw(root, sid, gid) {
       right: `<a class="tb-action coach-link" href="#/coach" aria-label="Coach">${icon('coach', 20)}</a><div class="bigscore" aria-label="Score"><span>Score</span>${total}</div>`,
     })}
     <div class="page game">
-      <div class="sb-wrap">${scoreboardHTML(game.frames, { current: pos, selected: editing })}</div>
+      <div class="sb-wrap">${scoreboardHTML(fix ? game.frames.map((s, f) => (f === fix.frame ? fix.shots : s)) : game.frames, { current: pos, selected: fix ? null : editing })}</div>
 
       <div class="shot-head">
         <h2>${editing ? 'Editing · ' : ''}Frame ${target.frame + 1} · Ball ${target.shot + 1}</h2>
         <span class="pill">${fresh ? 'Full rack' : `${plural(available.length, 'pin')} to pick up`}</span>
       </div>
+      ${fix ? `
+        <p class="hint review-info" id="fixInfo">With that change, frame ${fix.frame + 1} needs ball ${target.shot + 1}. Tap the pins it left and save to finish the fix, or Cancel to keep the game as it was.</p>` : ''}
       ${reviewing ? `
         <p class="hint review-info" id="reviewInfo">Adding details after the game · ${plural(left, 'ball')} without feet or arrow left${d.copiedFrom
           ? `. Feet and arrow copied from frame ${d.copiedFrom.frame + 1}, ball ${d.copiedFrom.index + 1}: change them if this ball was different.`
@@ -287,7 +290,7 @@ function draw(root, sid, gid) {
       <section class="card">
         <div class="card-h">
           <h3>Pins left standing</h3>
-          ${finished ? '' : '<button type="button" class="link" data-act="allup">All still up</button>'}
+          <button type="button" class="link" data-act="allup" id="allUp">${d.standing.size ? 'Clear' : 'All still up'}</button>
         </div>
         <div id="pins"></div>
         ${missRow ? `
@@ -296,11 +299,8 @@ function draw(root, sid, gid) {
           <div class="seg">${[[TAG.missedLeft, `${icon('chevL', 18)} Left`], [TAG.missedRight, `Right ${icon('chevR', 18)}`]].map(([t, label]) =>
             `<button type="button" class="chip${d.tags.includes(t) ? ' on' : ''}" data-tag="${esc(t)}" aria-pressed="${d.tags.includes(t)}" aria-label="${esc(t)}">${label}</button>`).join('')}</div>
         </div>` : ''}
-        ${finished || editing || isNew ? `<p class="hint center">${finished
-          ? 'Pins are locked once the game is over, so the score stays the same. To fix pins, use Undo last ball on the summary.'
-          : editing
-            ? 'Fix the pins if needed. To change a strike, spare or the number of balls, use Undo.'
-            : 'Tap the pins still standing. Nothing tapped = all knocked down.'}</p>` : ''}
+        ${editing && !fix ? '<p class="hint center">Fix the pins if they\'re wrong: the score updates when you save.</p>'
+          : isNew && !editing ? '<p class="hint center">Tap the pins still standing. Nothing tapped = all knocked down.</p>' : ''}
       </section>
 
       ${pinsOnly ? '' : `
@@ -354,8 +354,10 @@ function draw(root, sid, gid) {
   });
   // The Missed row shows once a pin stays up; a spare made after all drops the direction.
   const missEl = root.querySelector('#missRow');
+  const allUp = root.querySelector('#allUp');
   function pinsChanged() {
     updateSaveLabel();
+    allUp.textContent = d.standing.size ? 'Clear' : 'All still up';
     if (!missEl) return;
     missEl.hidden = d.standing.size === 0;
     if (missEl.hidden && d.tags.some((t) => t === TAG.missedLeft || t === TAG.missedRight)) {
@@ -367,7 +369,6 @@ function draw(root, sid, gid) {
   const pins = mountPins(root.querySelector('#pins'), {
     available,
     standing: d.standing,
-    readOnly: finished,
     onChange: pinsChanged,
   });
   const lane = pinsOnly || compact ? null : mountLane(root.querySelector('#lane'), { hand, value: d, breakpoint: level === 'all' });
@@ -406,6 +407,7 @@ function draw(root, sid, gid) {
   };
 
   root.onclick = (e) => {
+    if (e.target.closest('.tb-back')) fixing = null;
     if (finished && e.target.closest('.tb-back')) {
       e.preventDefault();
       toSummary();
@@ -489,7 +491,9 @@ function draw(root, sid, gid) {
         lane.refresh();
         break;
       case 'allup':
-        available.forEach((p) => d.standing.add(p));
+        // All still up, or Clear (all knocked down) once some pins are tapped.
+        if (d.standing.size) d.standing.clear();
+        else available.forEach((p) => d.standing.add(p));
         pins.refresh();
         pinsChanged();
         break;
@@ -538,27 +542,47 @@ function draw(root, sid, gid) {
       }
       case 'saveEdit':
       case 'saveNext': {
-        const frame = game.frames[target.frame];
+        const f = target.frame;
+        const original = fix ? fix.original : game.frames[f];
         const updated = shotFromDraft(d, fresh);
-        const after = frame.map((s, i) => (i === target.shot ? updated : s));
-        if (!keepsFrameShape(target.frame, frame, after)) {
-          toast('That pin change would change the frame. Use Undo to re-enter those balls.');
+        const changed = fix ? [...fix.shots, updated] : original.map((s, i) => (i === target.shot ? updated : s));
+        const { shots: repaired } = repairFrame(f, changed);
+        // The frame now needs another ball (and it isn't the frame being bowled): ask for it first.
+        if (!frameDone(f, repaired) && f !== pos?.frame) {
+          fixing = { gid, frame: f, shots: repaired, original };
+          draft = null;
+          draw(root, sid, gid);
+          window.scrollTo({ top: 0 });
           return;
         }
-        frame[target.shot] = updated;
+        const before = game.score;
+        const after = scoreGame(game.frames.map((s, i) => (i === f ? repaired : s))).total;
+        const fewer = original.length - repaired.length;
+        if (finished && (after !== before || fewer > 0)) {
+          const lost = fewer > 0 ? ` Frame ${f + 1} keeps ${plural(repaired.length, 'ball')} instead of ${original.length}.` : '';
+          if (!confirm(`Save this fix? Your score goes from ${before} to ${after}.${lost}`)) return;
+        }
+        game.frames[f] = repaired;
+        fixing = null;
         refreshScore(game);
+        if (finished) {
+          // Goals follow the new score.
+          unstampGoals(game);
+          stampReachedGoals(session, game);
+        }
         save();
+        if (after !== before) toast(`Saved. Score ${before} → ${after}`);
         if (act === 'saveNext') {
           nextBall();
           return;
         }
         if (finished) {
-          toSummary('Saved');
+          toSummary(after === before ? 'Saved' : '');
           return;
         }
         editing = null;
         draft = null;
-        toast('Saved');
+        if (after === before) toast('Saved');
         draw(root, sid, gid);
         break;
       }
@@ -566,6 +590,7 @@ function draw(root, sid, gid) {
         nextBall();
         break;
       case 'cancel':
+        fixing = null;
         if (finished) {
           toSummary();
           return;

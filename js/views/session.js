@@ -2,7 +2,9 @@
 // your note on the lane). The form shows your lane notes as you type the center and lane.
 
 import { db, save, findSession, findGame, newGame, requestPersist, unstampGoals, sortSessions, moveGame } from '../storage.js';
-import { computeStats, tips, seriesOf, sessionMoves, MOVE_MIN, spareAimFor, leagueStanding, LEAGUE_MIN_GAMES } from '../stats.js';
+import { computeStats, seriesOf, sessionMoves, MOVE_MIN, spareAimFor } from '../stats.js';
+import { leagueStanding, LEAGUE_MIN_GAMES } from '../league.js';
+import { tips } from '../tips.js';
 import { infoButton } from '../terms.js';
 import { topbar, icon, tipsHTML, logChips } from '../ui.js';
 import { esc, uid, todayISO, fmtDate, go, toast, avg, fmtPct, plural } from '../util.js';
