@@ -4,7 +4,8 @@
 // lanetop, lanebottom, changelog, settings, about, lefty, feetarrow, adddetails, review, progress, monthly, lifetime, practice, goals, goalreached, minsettings, minhome,
 // minstats, mingame, minhelp, calendar, carry, moves, coach, coachgame, sparescost, rolling, chains, framemap, leaguesettings, leaguesummary, share, fixpins.
 // Add &scroll=<selector> to scroll a card into view there, and &skin=minimal to look at the Minimal theme up to the "lifetime" step (a later restore resets it).
-// Add &size=360x780 for a smaller phone (the default is 412x915).
+// Add &size=360x780 for a smaller phone (the default is 412x915), and &debug=overflow to list what makes the
+// frozen screen scroll sideways (it's also posted to /__results).
 
 import { normalizeDB } from '../js/normalize.js';
 
@@ -21,6 +22,16 @@ let W;
 let D;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Elements that reach past the right edge of the screen (what makes a page scroll sideways), named
+// by tag, id or class and how far they stick out. Hidden elements and the sideways-scrolling strips are skipped.
+function sticksOut() {
+  const edge = D.documentElement.clientWidth; // without the scrollbar: as narrow as a 345px phone here
+  return [...D.querySelectorAll('body *')].filter((el) => {
+    if (el.closest('.sb-wrap, .tbl-wrap, .subtabs')) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.right > edge + 1;
+  }).slice(0, 4).map((el) => `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}.${[...el.classList].join('.')} +${Math.round(el.getBoundingClientRect().right - edge)}px "${words(el).slice(0, 30)}"`);
+}
 const $ = (s) => D.querySelector(s);
 const text = (s) => ($(s)?.textContent ?? '').trim();
 const words = (el) => (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -47,6 +58,21 @@ function stopAt(step) {
   const scroll = PARAMS.get('scroll');
   if (scroll && $(scroll)) W.scrollTo(0, $(scroll).getBoundingClientRect().top + W.scrollY - 130); // clear the sticky bars
   $('#toast .toast-x')?.click(); // so a message doesn't cover the card
+  // &debug=overflow lists what makes the frozen screen scroll sideways, next to the screenshot.
+  if (PARAMS.get('debug') === 'overflow') {
+    const line = `OVERFLOW ${D.documentElement.scrollWidth} vs ${D.documentElement.clientWidth}: ${sticksOut().join(' | ') || 'nothing sticks out'}`;
+    log.unshift(line);
+    report();
+    // And again once anything the screen fills in later has arrived.
+    setTimeout(() => {
+      const at = D.elementFromPoint(150, W.innerHeight - 8);
+      const scrollers = [...D.querySelectorAll('*')].filter((el) => el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(W.getComputedStyle(el).overflowX))
+        .map((el) => `${el.tagName.toLowerCase()}.${[...el.classList].join('.')} ${el.scrollWidth}/${el.clientWidth}`);
+      const later = `LATER ${D.documentElement.scrollWidth} vs ${D.documentElement.clientWidth}; body ${D.body.scrollWidth}; inner ${W.innerWidth}x${W.innerHeight}; at bottom: ${at?.tagName}.${[...(at?.classList ?? [])].join('.')}; scrollers: ${scrollers.join(', ') || 'none'}`;
+      fetch('/__results', { method: 'POST', body: `${line}
+${later}` }).catch(() => {});
+    }, 3000);
+  }
   throw new Stop();
 }
 async function click(sel) {
@@ -319,6 +345,15 @@ async function run() {
       check('a strike made a 9 asks for the frame\'s 2nd ball, and saves nothing yet', text('.shot-head h2') === 'Editing · Frame 1 · Ball 2'
         && text('#fixInfo').startsWith('With that change, frame 1 needs ball 2') && g1().score === 300 && g1().frames[0].length === 1, `${text('.shot-head h2')} | ${g1().score}`);
       check('only the 10 pin is left to pick up', D.querySelectorAll('#pins .pin:not(.gone)').length === 1 && !!$('#pins .pin[data-pin="10"]:not(.gone)'));
+      {
+        const width = frame.style.width;
+        frame.style.width = '360px';
+        await sleep(60);
+        const h = $('.shot-head h2');
+        check('on a 360px phone the editing heading is one line', h.offsetHeight < parseFloat(W.getComputedStyle(h).fontSize) * 2, `${h.offsetHeight}px`);
+        frame.style.width = width;
+        await sleep(60);
+      }
       stopAt('fixpins');
       await click('[data-act="cancel"]');
       check('Cancel keeps the game as it was', W.location.hash === `#/summary/${sid}/${gid1}` && g1().score === 300 && g1().frames[0].length === 1, `${W.location.hash} ${g1().score}`);
@@ -372,17 +407,40 @@ async function run() {
   // ---- Share a game: a picture of the scorecard (a download here, the share sheet on a phone) ----
   {
     await nav(`#/summary/${sid}/${gid2}`);
+    {
+      const width = frame.style.width;
+      frame.style.width = '360px';
+      await sleep(60);
+      const wrap = $('.hero .sb-wrap');
+      check('on a 360px phone the summary shows all 10 frames', wrap.scrollWidth <= wrap.clientWidth + 1, `${wrap.scrollWidth} > ${wrap.clientWidth}`);
+      // One line each: a two-line button is taller than its minimum height.
+      const tall = (sel, max) => [...D.querySelectorAll(sel)].filter((el) => el.offsetHeight > max).map((el) => `${words(el)} ${el.offsetHeight}px`);
+      check('and its buttons keep their words on one line', !tall('.actions-row .btn', 50).length, tall('.actions-row .btn', 50).join(', '));
+      // Replacing the page in the history, so later history checks stay under the browser's 50-entry cap.
+      W.location.replace('#/settings');
+      await sleep(80);
+      check("Settings' choices keep their words on one line at 360px", !tall('.seg.full .chip', 44).length, tall('.seg.full .chip', 44).join(', '));
+      const overflow = [...D.querySelectorAll('.seg.full')].filter((seg) => seg.scrollWidth > seg.clientWidth + 1).map((seg) => words(seg));
+      check('...and fit inside their card, with no sideways scrolling', !overflow.length && D.documentElement.scrollWidth <= W.innerWidth, overflow.join(' | '));
+      W.location.replace(`#/summary/${sid}/${gid2}`);
+      await sleep(80);
+      frame.style.width = width;
+      await sleep(60);
+    }
     let blob = null;
     let name = '';
     const make = W.URL.createObjectURL;
     const tap = W.HTMLAnchorElement.prototype.click;
-    W.URL.createObjectURL = (b) => { blob = b; return 'blob:test'; };
+    // The picture is drawn and encoded off the test's clock, so wait for it rather than for a time.
+    let handed;
+    const drawn = new Promise((resolve) => { handed = resolve; });
+    W.URL.createObjectURL = (b) => { blob = b; handed(); return 'blob:test'; };
     W.HTMLAnchorElement.prototype.click = function () { name = this.download; };
     // Edge on Windows can share files too, and its share sheet would wait for a pick: take the download path.
     Object.defineProperty(W.navigator, 'canShare', { value: () => false, configurable: true });
     try {
       await click('#shareGame');
-      for (let i = 0; i < 40 && !blob; i++) await sleep(50);
+      await drawn;
     } finally {
       W.URL.createObjectURL = make;
       W.HTMLAnchorElement.prototype.click = tap;
@@ -693,6 +751,26 @@ async function run() {
   await click('#logCard [data-log="all"]');
   await click('[data-hand="L"]');
   check('left-handed saved', db().settings.hand === 'L');
+  {
+    // The whole Settings page fits a 360px phone: nothing sticks out past the right edge.
+    const width = frame.style.width;
+    frame.style.width = '360px';
+    await sleep(80);
+    check('Settings fits a 360px phone, with no sideways scrolling', !sticksOut().length && D.documentElement.scrollWidth <= D.documentElement.clientWidth,
+      `${D.documentElement.scrollWidth} > ${D.documentElement.clientWidth}: ${sticksOut().join(' | ')}`);
+    // The picked choice is bold, so try each: the widest is Feet & arrow, the default.
+    const wide = [];
+    for (const level of ['pins', 'line', 'all']) {
+      await click(`#logCard [data-log="${level}"]`);
+      if (sticksOut().length || D.documentElement.scrollWidth > D.documentElement.clientWidth) wide.push(`${level}: ${sticksOut().join(' | ')}`);
+    }
+    check('...whichever What to log choice is picked', !wide.length, wide.join(' / '));
+    // Back as the steps below expect: left-handed, with its message showing.
+    await click('[data-hand="R"]');
+    await click('[data-hand="L"]');
+    frame.style.width = width;
+    await sleep(60);
+  }
   stopAt('settings');
   check('settings shows a message', text('#toast .toast-msg') === 'Left-handed lane view', text('#toast .toast-msg'));
   // A new version taking over shows "App updated", replacing the older message.
@@ -754,11 +832,19 @@ async function run() {
   }
 
   // ---- Back button: redirects replace history instead of adding to it ----
+  // Back from the game goes home, not to #/bowl (which would redirect again). Checked with Back
+  // itself, since the history length stops growing at the browser's 50-entry cap.
   await nav('#/');
-  const len = W.history.length;
   await nav('#/bowl');
   await sleep(80);
-  check('Bowl tab redirect adds one history entry', W.history.length === len + 1 && W.location.hash.startsWith('#/game/'), `${len} -> ${W.history.length}`);
+  {
+    const game = W.location.hash;
+    W.history.back();
+    await sleep(150);
+    check('Bowl tab redirect replaces itself in the history: Back goes home', game.startsWith('#/game/') && W.location.hash === '#/', `${game} -> ${W.location.hash}`);
+    W.history.forward();
+    await sleep(150);
+  }
 
   // ---- Add details after the game ----
   // The left-handed game has 3 balls saved with Pins only (frame 2, and both balls of frame 3).
@@ -902,6 +988,14 @@ async function run() {
       check('next up lists the 3 closest, a 200 game first at a best of 193', D.querySelectorAll('#nextUp li').length === 3
         && words($('#nextUp li:first-child')) === 'First 200 game your best is 193', words($('#nextUp')));
       check('the rest shows how far to 25 games', [...D.querySelectorAll('#milestones details li')].some((li) => li.textContent.includes('25 games bowled') && li.textContent.includes('18/25')), text('#milestones details'));
+    }
+    {
+      const size = (el) => parseFloat(W.getComputedStyle(el).fontSize);
+      const since = $('#lifetime .kv-val.text');
+      const label = since.closest('.kv-row').querySelector('.kv-label');
+      const number = $('#lifetime .kv-val:not(.text)');
+      check('Your bowling so far: dates and names at the label\'s size, numbers a step bigger', size(since) === size(label) && size(number) > size(since),
+        `${size(since)} / ${size(label)} / ${size(number)}`);
     }
     stopAt('lifetime');
     // Filters still apply to the totals, but not to milestones.
@@ -1207,8 +1301,11 @@ async function run() {
   check('minimal theme uses the Inter font', W.getComputedStyle(D.body).fontFamily.startsWith('Inter'), W.getComputedStyle(D.body).fontFamily);
   const page = W.getComputedStyle(D.documentElement).getPropertyValue('--page').trim();
   check('status bar matches the page color', themeColor() === page && ['#ffffff', '#0b0b0c'].includes(page), `${themeColor()} vs ${page}`);
-  await D.fonts.ready;
-  check('Inter font file loads', D.fonts.check('16px Inter'));
+  // Asked for directly, so the check doesn't depend on when the page first draws Inter text.
+  const loadInter = () => D.fonts.load('16px Inter').catch(() => []);
+  let inter = await loadInter();
+  if (!inter.length) inter = await loadInter(); // one retry: the test server sometimes drops a request
+  check('Inter font file loads', inter.length > 0 && D.fonts.check('16px Inter'), `${inter.length} faces`);
   stopAt('minsettings');
   await nav('#/');
   check('minimal hero has no dark background', W.getComputedStyle($('.hero')).backgroundImage === 'none');

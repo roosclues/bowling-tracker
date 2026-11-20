@@ -80,6 +80,8 @@ def run_browser(browser, url, real_time=False):
                 proc.wait()
     if "text" not in RESULTS and "last" in RESULTS:
         return f"(no result received; the last check was: {RESULTS['last']})\nFAIL the run did not finish"
+    if "text" not in RESULTS:
+        return "(no result received: the page never ran a check, so look for a syntax error in it)\nFAIL the run did not start"
     return RESULTS.get("text")
 
 

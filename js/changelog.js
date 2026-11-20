@@ -11,6 +11,15 @@ export function notesFor(version) {
 
 export const CHANGELOG = [
   {
+    version: 'v20261120-1446',
+    title: 'Calmer text, and a scoreboard that fits small phones',
+    items: [
+      'Text that does the same job is now the same size on every screen, so screens look calmer and more even.',
+      'Lists of numbers, like Lifetime → Your bowling so far: dates and names (your ball, your center) are now the size of their label, and the numbers are a touch smaller.',
+      'On smaller phones the game summary shows all 10 frames without scrolling, and buttons like "Another game" and the What to log choices keep their words on one line.',
+    ],
+  },
+  {
     version: 'v20261120-0731',
     title: 'Share a game, frame by frame, and a faster Stats',
     items: [
